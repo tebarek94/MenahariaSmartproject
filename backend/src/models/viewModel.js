@@ -1,0 +1,466 @@
+import { queryAsync } from "../config/db.js";
+import * as ticketModel from "./ticketModel.js";
+import * as tripModel from "./tripModel.js";
+import * as cargoModel from "./cargoModel.js";
+import * as notificationModel from "./notificationModel.js";
+
+async function scalarCount(sql, key = "n") {
+  const [row] = await queryAsync(sql);
+  return Number(row?.[key] ?? 0);
+}
+
+export async function getAdminDashboardView() {
+  const [
+    usersCount,
+    rolesCount,
+    vehiclesCount,
+    routesCount,
+    tripsCount,
+    ticketsCount,
+    cargoCount,
+    paymentsCount,
+    notificationsCount,
+    reportsCount,
+  ] = await Promise.all([
+    scalarCount("SELECT COUNT(*) AS n FROM users", "n"),
+    scalarCount("SELECT COUNT(*) AS n FROM roles", "n"),
+    scalarCount("SELECT COUNT(*) AS n FROM vehicles", "n"),
+    scalarCount("SELECT COUNT(*) AS n FROM routes", "n"),
+    scalarCount("SELECT COUNT(*) AS n FROM trips", "n"),
+    scalarCount("SELECT COUNT(*) AS n FROM tickets", "n"),
+    scalarCount("SELECT COUNT(*) AS n FROM cargo", "n"),
+    scalarCount("SELECT COUNT(*) AS n FROM payments", "n"),
+    scalarCount("SELECT COUNT(*) AS n FROM notifications", "n"),
+    scalarCount("SELECT COUNT(*) AS n FROM reports", "n"),
+  ]);
+
+  const [revenueRow] = await queryAsync(
+    `SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE status = 'completed'`
+  );
+
+  const [
+    ticketsByStatus,
+    tripsByStatus,
+    cargoByStatus,
+    paymentsByStatus,
+    usersWithRoles,
+    routesCatalog,
+    rolesWithPermissionCounts,
+    vehiclesWithSeats,
+    tripsWithRelations,
+    ticketsWithRelations,
+    cargoWithRelations,
+    paymentsWithRelations,
+    recentNotifications,
+    recentReports,
+    recentLoginHistory,
+  ] = await Promise.all([
+    queryAsync(
+      `SELECT status, COUNT(*) AS count FROM tickets GROUP BY status ORDER BY status`
+    ),
+    queryAsync(
+      `SELECT status, COUNT(*) AS count FROM trips GROUP BY status ORDER BY status`
+    ),
+    queryAsync(
+      `SELECT status, COUNT(*) AS count FROM cargo GROUP BY status ORDER BY status`
+    ),
+    queryAsync(
+      `SELECT status, COUNT(*) AS count FROM payments GROUP BY status ORDER BY status`
+    ),
+    queryAsync(
+      `SELECT u.id, u.full_name, u.phone, u.email, u.status AS user_status, u.created_at,
+              r.id AS role_id, r.name AS role_name
+       FROM users u
+       INNER JOIN roles r ON r.id = u.role_id
+       ORDER BY u.id DESC
+       LIMIT 40`
+    ),
+    queryAsync(
+      `SELECT id, origin, destination, distance_km, created_at
+       FROM routes
+       ORDER BY id DESC
+       LIMIT 50`
+    ),
+    queryAsync(
+      `SELECT r.id, r.name AS role_name, r.created_at,
+              COUNT(rp.permission_id) AS permission_count
+       FROM roles r
+       LEFT JOIN role_permissions rp ON rp.role_id = r.id
+       GROUP BY r.id, r.name, r.created_at
+       ORDER BY r.id`
+    ),
+    queryAsync(
+      `SELECT v.id, v.plate_number, v.model, v.capacity, v.status AS vehicle_status, v.created_at,
+              COUNT(s.id) AS seats_configured
+       FROM vehicles v
+       LEFT JOIN seats s ON s.vehicle_id = v.id
+       GROUP BY v.id, v.plate_number, v.model, v.capacity, v.status, v.created_at
+       ORDER BY v.id DESC
+       LIMIT 30`
+    ),
+    queryAsync(
+      `SELECT t.id AS trip_id,
+              t.departure_time, t.arrival_time, t.price, t.status AS trip_status,
+              r.id AS route_id, r.origin, r.destination, r.distance_km,
+              v.id AS vehicle_id, v.plate_number, v.model AS vehicle_model,
+              v.capacity AS vehicle_capacity, v.status AS vehicle_operational_status,
+              d.id AS driver_user_id, d.full_name AS driver_name, d.phone AS driver_phone
+       FROM trips t
+       INNER JOIN routes r ON r.id = t.route_id
+       INNER JOIN vehicles v ON v.id = t.vehicle_id
+       LEFT JOIN users d ON d.id = t.driver_id
+       ORDER BY t.departure_time DESC
+       LIMIT 25`
+    ),
+    queryAsync(
+      `SELECT tk.id AS ticket_id, tk.ticket_code, tk.status AS ticket_status,
+              tk.payment_status, tk.issued_at,
+              u.id AS passenger_id, u.full_name AS passenger_name, u.phone AS passenger_phone,
+              s.seat_number,
+              t.id AS trip_id, t.departure_time, t.price AS trip_price, t.status AS trip_status,
+              r.origin, r.destination,
+              v.plate_number
+       FROM tickets tk
+       INNER JOIN users u ON u.id = tk.user_id
+       INNER JOIN seats s ON s.id = tk.seat_id
+       INNER JOIN trips t ON t.id = tk.trip_id
+       INNER JOIN routes r ON r.id = t.route_id
+       INNER JOIN vehicles v ON v.id = t.vehicle_id
+       ORDER BY tk.issued_at DESC
+       LIMIT 25`
+    ),
+    queryAsync(
+      `SELECT c.id AS cargo_id, c.weight, c.content, c.fee, c.tracking_code,
+              c.status AS cargo_status, c.created_at,
+              o.id AS owner_id, o.full_name AS owner_name, o.phone AS owner_phone,
+              t.id AS trip_id, t.departure_time, t.status AS trip_status,
+              r.origin, r.destination,
+              v.plate_number
+       FROM cargo c
+       INNER JOIN users o ON o.id = c.owner_id
+       INNER JOIN trips t ON t.id = c.trip_id
+       INNER JOIN routes r ON r.id = t.route_id
+       INNER JOIN vehicles v ON v.id = t.vehicle_id
+       ORDER BY c.created_at DESC
+       LIMIT 25`
+    ),
+    queryAsync(
+      `SELECT p.id AS payment_id, p.ticket_id, p.amount, p.method, p.transaction_ref,
+              p.status AS payment_status, p.paid_at,
+              u.full_name AS passenger_name, u.phone AS passenger_phone,
+              r.origin, r.destination, t.departure_time
+       FROM payments p
+       LEFT JOIN tickets tk ON tk.id = p.ticket_id
+       LEFT JOIN users u ON u.id = tk.user_id
+       LEFT JOIN trips t ON t.id = tk.trip_id
+       LEFT JOIN routes r ON r.id = t.route_id
+       ORDER BY p.id DESC
+       LIMIT 25`
+    ),
+    queryAsync(
+      `SELECT n.id, n.user_id, u.full_name AS user_name,
+              n.message, n.channel, n.status, n.created_at
+       FROM notifications n
+       LEFT JOIN users u ON u.id = n.user_id
+       ORDER BY n.created_at DESC
+       LIMIT 15`
+    ),
+    queryAsync(
+      `SELECT id, type, date_range, file_path, created_at
+       FROM reports
+       ORDER BY created_at DESC
+       LIMIT 10`
+    ),
+    queryAsync(
+      `SELECT lh.id, lh.user_id, u.full_name AS user_name,
+              lh.device_info, lh.ip_address, lh.login_time
+       FROM login_history lh
+       LEFT JOIN users u ON u.id = lh.user_id
+       ORDER BY lh.login_time DESC
+       LIMIT 20`
+    ),
+  ]);
+
+  return {
+    view: "admin",
+    summary: {
+      counts: {
+        users: usersCount,
+        roles: rolesCount,
+        routes: routesCount,
+        vehicles: vehiclesCount,
+        trips: tripsCount,
+        tickets: ticketsCount,
+        cargo: cargoCount,
+        payments: paymentsCount,
+        notifications: notificationsCount,
+        reports: reportsCount,
+      },
+      revenue_completed_total: Number(revenueRow?.total ?? 0),
+      breakdowns: {
+        tickets_by_status: ticketsByStatus,
+        trips_by_status: tripsByStatus,
+        cargo_by_status: cargoByStatus,
+        payments_by_status: paymentsByStatus,
+      },
+    },
+    users_with_roles: usersWithRoles,
+    routes: routesCatalog,
+    roles_with_permission_counts: rolesWithPermissionCounts,
+    vehicles_with_seat_counts: vehiclesWithSeats,
+    trips_linked: tripsWithRelations,
+    tickets_linked: ticketsWithRelations,
+    cargo_linked: cargoWithRelations,
+    payments_linked: paymentsWithRelations,
+    notifications_recent: recentNotifications,
+    reports_recent: recentReports,
+    login_history_recent: recentLoginHistory,
+  };
+}
+
+export async function getDriverDashboardView(driverUserId) {
+  const myTrips = await tripModel.getTripsByDriverId(driverUserId);
+  const tripTickets = await ticketModel.getTicketsWithDetailsForDriver(driverUserId);
+  const myCargo = await cargoModel.getCargoForDriverTrips(driverUserId);
+
+  const [activeRow] = await queryAsync(
+    `SELECT COUNT(*) AS n FROM trips
+     WHERE driver_id = ? AND status IN ('scheduled','ongoing')`,
+    [driverUserId]
+  );
+  const active_trips = Number(activeRow?.n ?? 0);
+
+  return {
+    view: "driver",
+    driver_user_id: driverUserId,
+    counts: {
+      assigned_trips: myTrips.length,
+      active_trips,
+      tickets_on_my_trips: tripTickets.length,
+      cargo_on_my_trips: myCargo.length,
+    },
+    my_trips: myTrips,
+    tickets_for_my_trips: tripTickets,
+    cargo_on_my_trips: myCargo,
+  };
+}
+
+export async function getPassengerDashboardView(userId) {
+  const tickets = await ticketModel.getTicketsWithDetailsForPassenger(userId);
+  const cargo = await cargoModel.getCargoByOwnerId(userId);
+  const notifications = await notificationModel.getNotificationsForUserId(userId);
+
+  const [userRow] = await queryAsync(
+    `SELECT id, full_name, phone, email, status, role_id, created_at FROM users WHERE id = ?`,
+    [userId]
+  );
+
+  const browseTrips = await tripModel.getTripsForPassengerBrowse();
+
+  return {
+    view: "passenger",
+    profile: userRow ?? null,
+    my_tickets: tickets,
+    my_cargo: cargo,
+    notifications,
+    trips_available_to_book: browseTrips,
+  };
+}
+
+/** Clamp limit query param for relation views (default 50, max 200). */
+export function parseViewLimit(raw) {
+  const n = parseInt(String(raw ?? "50"), 10);
+  if (!Number.isFinite(n)) return 50;
+  return Math.min(Math.max(n, 1), 200);
+}
+
+/** Ticket → passenger user, seat, trip, route, vehicle, driver, payment. */
+export async function getTicketsRelationsView(limit) {
+  const lim = parseViewLimit(limit);
+  const rows = await queryAsync(
+    `SELECT
+       tk.id AS ticket_id,
+       tk.ticket_code,
+       tk.status AS ticket_status,
+       tk.payment_status,
+       tk.issued_at,
+       u.id AS passenger_id,
+       u.full_name AS passenger_name,
+       u.phone AS passenger_phone,
+       u.email AS passenger_email,
+       s.id AS seat_id,
+       s.seat_number,
+       t.id AS trip_id,
+       t.departure_time,
+       t.arrival_time,
+       t.price AS trip_price,
+       t.status AS trip_status,
+       r.id AS route_id,
+       r.origin,
+       r.destination,
+       r.distance_km,
+       v.id AS vehicle_id,
+       v.plate_number,
+       v.model AS vehicle_model,
+       v.capacity AS vehicle_capacity,
+       d.id AS driver_id,
+       d.full_name AS driver_name,
+       d.phone AS driver_phone,
+       pay.id AS payment_id,
+       pay.amount AS payment_amount,
+       pay.method AS payment_method,
+       pay.status AS payment_record_status,
+       pay.paid_at
+     FROM tickets tk
+     INNER JOIN users u ON u.id = tk.user_id
+     INNER JOIN seats s ON s.id = tk.seat_id
+     INNER JOIN trips t ON t.id = tk.trip_id
+     INNER JOIN routes r ON r.id = t.route_id
+     INNER JOIN vehicles v ON v.id = t.vehicle_id
+     LEFT JOIN users d ON d.id = t.driver_id
+     LEFT JOIN payments pay ON pay.ticket_id = tk.id
+     ORDER BY tk.issued_at DESC
+     LIMIT ?`,
+    [lim]
+  );
+  return { view: "tickets_relations", limit: lim, rows };
+}
+
+/** Vehicle → seat counts, trip counts; recent trips sample per query. */
+export async function getVehiclesRelationsView(limit) {
+  const lim = parseViewLimit(limit);
+  const fleet = await queryAsync(
+    `SELECT
+       v.id AS vehicle_id,
+       v.plate_number,
+       v.model,
+       v.capacity,
+       v.status AS vehicle_status,
+       v.created_at,
+       (SELECT COUNT(*) FROM seats WHERE vehicle_id = v.id) AS seats_configured,
+       (SELECT COUNT(*) FROM trips WHERE vehicle_id = v.id) AS trips_total
+     FROM vehicles v
+     ORDER BY v.id DESC
+     LIMIT ?`,
+    [lim]
+  );
+  const recentTripsByVehicle = await queryAsync(
+    `SELECT
+       t.id AS trip_id,
+       t.vehicle_id,
+       t.departure_time,
+       t.status AS trip_status,
+       t.price,
+       r.origin,
+       r.destination,
+       d.full_name AS driver_name
+     FROM trips t
+     INNER JOIN routes r ON r.id = t.route_id
+     LEFT JOIN users d ON d.id = t.driver_id
+     ORDER BY t.departure_time DESC
+     LIMIT ?`,
+    [Math.min(lim * 3, 200)]
+  );
+  return {
+    view: "vehicles_relations",
+    limit: lim,
+    fleet_summary: fleet,
+    recent_trips_sample: recentTripsByVehicle,
+  };
+}
+
+/** Cargo → owner user, trip, route, vehicle, driver. */
+export async function getCargoRelationsView(limit) {
+  const lim = parseViewLimit(limit);
+  const rows = await queryAsync(
+    `SELECT
+       c.id AS cargo_id,
+       c.weight,
+       c.content,
+       c.fee,
+       c.tracking_code,
+       c.status AS cargo_status,
+       c.created_at,
+       o.id AS owner_id,
+       o.full_name AS owner_name,
+       o.phone AS owner_phone,
+       t.id AS trip_id,
+       t.departure_time,
+       t.status AS trip_status,
+       r.id AS route_id,
+       r.origin,
+       r.destination,
+       v.id AS vehicle_id,
+       v.plate_number,
+       v.model AS vehicle_model,
+       d.id AS driver_id,
+       d.full_name AS driver_name,
+       d.phone AS driver_phone
+     FROM cargo c
+     INNER JOIN users o ON o.id = c.owner_id
+     INNER JOIN trips t ON t.id = c.trip_id
+     INNER JOIN routes r ON r.id = t.route_id
+     INNER JOIN vehicles v ON v.id = t.vehicle_id
+     LEFT JOIN users d ON d.id = t.driver_id
+     ORDER BY c.created_at DESC
+     LIMIT ?`,
+    [lim]
+  );
+  return { view: "cargo_relations", limit: lim, rows };
+}
+
+/** Seat → vehicle; optional ticket / passenger / trip / route (one row per ticket if history exists). */
+export async function getSeatsRelationsView(limit) {
+  const lim = parseViewLimit(limit);
+  const rows = await queryAsync(
+    `SELECT
+       s.id AS seat_id,
+       s.seat_number,
+       s.created_at AS seat_created_at,
+       v.id AS vehicle_id,
+       v.plate_number,
+       v.model AS vehicle_model,
+       v.capacity AS vehicle_capacity,
+       v.status AS vehicle_status,
+       tk.id AS ticket_id,
+       tk.ticket_code,
+       tk.status AS ticket_status,
+       tk.issued_at AS ticket_issued_at,
+       u.id AS passenger_id,
+       u.full_name AS passenger_name,
+       u.phone AS passenger_phone,
+       tr.id AS trip_id,
+       tr.departure_time AS trip_departure,
+       r.origin,
+       r.destination
+     FROM seats s
+     INNER JOIN vehicles v ON v.id = s.vehicle_id
+     LEFT JOIN tickets tk ON tk.seat_id = s.id
+     LEFT JOIN users u ON u.id = tk.user_id
+     LEFT JOIN trips tr ON tr.id = tk.trip_id
+     LEFT JOIN routes r ON r.id = tr.route_id
+     ORDER BY v.plate_number, s.seat_number, tk.issued_at DESC
+     LIMIT ?`,
+    [lim]
+  );
+  return { view: "seats_relations", limit: lim, rows };
+}
+
+/** All relation blocks in one response (admin analytics screen). */
+export async function getRelationsOverviewView(limit) {
+  const lim = parseViewLimit(limit);
+  const [ticketsV, vehiclesV, cargoV, seatsV] = await Promise.all([
+    getTicketsRelationsView(lim),
+    getVehiclesRelationsView(lim),
+    getCargoRelationsView(lim),
+    getSeatsRelationsView(lim),
+  ]);
+  return {
+    view: "relations_overview",
+    limit: lim,
+    tickets_relations: ticketsV,
+    vehicles_relations: vehiclesV,
+    cargo_relations: cargoV,
+    seats_relations: seatsV,
+  };
+}

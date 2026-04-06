@@ -1,0 +1,188 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply scroll-smooth;
+    font-size: 18px;
+  }
+  body {
+    @apply text-apptext;
+    background: #f2f2f2;
+  }
+  ::selection {
+    @apply bg-primary-700/80 text-white;
+  }
+}
+
+@layer components {
+  .admin-theme-dark {
+    @apply bg-slate-950 text-slate-100;
+  }
+
+  .admin-theme-light {
+    background: #f2f2f2;
+    color: #333333;
+  }
+
+  .card-surface {
+    @apply border-primary-900/30 bg-slate-900/60 text-slate-100 shadow-primary-950/20;
+  }
+
+  .card-surface h2 {
+    @apply text-white;
+  }
+
+  .card-surface p {
+    @apply text-slate-300;
+  }
+
+  .admin-theme-light .card-surface {
+    background: #ffffff;
+    color: #333333;
+    border-color: rgb(74 144 226 / 0.28);
+    box-shadow: 0 8px 28px rgb(74 144 226 / 0.14);
+  }
+
+  .admin-theme-light .card-surface h2 {
+    color: #333333;
+  }
+
+  .admin-theme-light .card-surface p {
+    color: #4b5563;
+  }
+
+  .ui-label {
+    @apply text-sm font-medium text-slate-300;
+  }
+
+  .ui-field {
+    @apply w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500;
+    @apply focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500;
+  }
+
+  .ui-field-error {
+    @apply border-red-500 focus:border-red-500 focus:ring-red-500;
+  }
+
+  .ui-btn-primary {
+    @apply bg-primary-600 text-white hover:bg-primary-700 focus-visible:ring-primary-500;
+  }
+
+  .ui-btn-secondary {
+    @apply bg-secondary-600 text-slate-950 hover:bg-secondary-500 focus-visible:ring-secondary-400;
+  }
+
+  .ui-btn-ghost {
+    @apply bg-transparent text-slate-300 hover:bg-slate-800 hover:text-secondary-200 focus-visible:ring-secondary-500/60;
+  }
+
+  .ui-btn-danger {
+    @apply bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500;
+  }
+
+  .ui-iconbtn-ghost {
+    @apply border-slate-700 bg-slate-900/60 text-slate-300 hover:bg-slate-800 hover:text-white;
+  }
+
+  .ui-iconbtn-primary {
+    @apply border-primary-700/50 bg-primary-950/60 text-primary-300 hover:bg-primary-900/60;
+  }
+
+  .ui-iconbtn-danger {
+    @apply border-red-900/50 bg-red-950/40 text-red-400 hover:bg-red-900/50 hover:text-red-200;
+  }
+
+  .ui-table-empty {
+    @apply rounded-lg border border-primary-900/30 bg-slate-900/40 px-4 py-8 text-center text-sm text-slate-500;
+  }
+
+  .ui-table-wrap {
+    @apply overflow-auto rounded-lg border border-primary-900/30;
+  }
+
+  .ui-table-head {
+    @apply sticky top-0 z-10 bg-slate-900/95 shadow-sm backdrop-blur-sm;
+  }
+
+  .ui-table-head-row {
+    @apply border-b border-primary-900/40;
+  }
+
+  .ui-table-head-cell {
+    @apply whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-primary-400/90;
+  }
+
+  .ui-table-body {
+    @apply divide-y divide-slate-800/90;
+  }
+
+  .ui-table-row {
+    @apply bg-slate-950/40 transition-colors hover:bg-slate-800/40;
+  }
+
+  .ui-table-cell {
+    @apply max-w-[min(280px,40vw)] truncate px-3 py-2 text-slate-300 md:max-w-xs;
+  }
+
+  .admin-theme-light .ui-label {
+    color: #333333;
+  }
+
+  .admin-theme-light .ui-field {
+    @apply border-primary-200 bg-white text-apptext;
+  }
+
+  .admin-theme-light .ui-field::placeholder {
+    color: #94a3b8;
+  }
+
+  .admin-theme-light .ui-btn-ghost {
+    @apply text-slate-700 hover:bg-primary-50 hover:text-primary-900;
+  }
+
+  .admin-theme-light .ui-iconbtn-ghost {
+    @apply border-primary-200 bg-white text-slate-700 hover:bg-primary-50 hover:text-primary-900;
+  }
+
+  .admin-theme-light .ui-iconbtn-primary {
+    @apply border-primary-300 bg-primary-50 text-primary-900 hover:bg-primary-100;
+  }
+
+  .admin-theme-light .ui-iconbtn-danger {
+    @apply border-red-300 bg-red-50 text-red-700 hover:bg-red-100;
+  }
+
+  .admin-theme-light .ui-table-empty {
+    @apply border-primary-200 bg-white text-slate-600;
+  }
+
+  .admin-theme-light .ui-table-wrap {
+    @apply border-primary-200 bg-white;
+  }
+
+  .admin-theme-light .ui-table-head {
+    @apply bg-white;
+  }
+
+  .admin-theme-light .ui-table-head-row {
+    @apply border-primary-200;
+  }
+
+  .admin-theme-light .ui-table-head-cell {
+    @apply text-primary-700;
+  }
+
+  .admin-theme-light .ui-table-body {
+    @apply divide-slate-200;
+  }
+
+  .admin-theme-light .ui-table-row {
+    @apply bg-white hover:bg-primary-50;
+  }
+
+  .admin-theme-light .ui-table-cell {
+    color: #333333;
+  }
+}
