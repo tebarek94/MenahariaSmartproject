@@ -8,19 +8,22 @@ import { Select } from "@/ui/Select.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
+import { DeleteModal } from "@/components/DeleteModal.jsx";
 import { formatDate } from "@/utils/format.js";
 
 const CHANNELS = ["sms", "email", "push"];
 const STATUSES = ["pending", "sent", "failed"];
 
 export function AdminNotificationsPage() {
-  const [rows, setRows] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
+  const [deleting, setDeleting] = useState(false);
 
   const [cUser, setCUser] = useState("");
   const [cMsg, setCMsg] = useState("");
@@ -43,7 +46,7 @@ export function AdminNotificationsPage() {
         notificationsService.list(),
         adminUsersService.list(),
       ]);
-      setRows(Array.isArray(n) ? n : []);
+      setNotifications(Array.isArray(n) ? n : []);
       setUsers(Array.isArray(u) ? u : []);
     } catch (e) {
       setError(e?.message || "Failed to load");
@@ -136,20 +139,46 @@ export function AdminNotificationsPage() {
   }
 
   async function handleRemove(id) {
-    if (!window.confirm("Delete this notification?")) return;
-    setError("");
-    setNotice("");
-    if (editingId === id) closeEdit();
-    try {
-      await notificationsService.remove(id);
-      setNotice("Deleted.");
-      await refresh();
-    } catch (e) {
-      setError(e?.message || "Delete failed");
-    }
+    const notification = notifications.find(n => n.id === id);
+    setDeleteModal({ isOpen: true, id, name: `Notification #${id}` });
   }
 
-  if (loading && !rows.length) {
+  const confirmDelete = async () => {
+    const { id } = deleteModal;
+    setError("");
+    setNotice("");
+    setDeleting(true);
+    
+    if (editingId === id) closeEdit();
+    
+    try {
+      await notificationsService.remove(id);
+      setNotice("Notification deleted successfully.");
+      setDeleteModal({ isOpen: false, id: null, name: "" });
+      await refresh();
+    } catch (err) {
+      console.error("Delete notification error:", err);
+      let errorMessage = "Failed to delete notification.";
+      
+      if (err.status === 500) {
+        errorMessage = "Server error occurred. The notification may have associated user deliveries.";
+      } else if (err.status === 403) {
+        errorMessage = "You don't have permission to delete this notification.";
+      } else if (err.status === 404) {
+        errorMessage = "Notification not found. It may have already been deleted.";
+      } else if (err.data?.message) {
+        errorMessage = err.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  if (loading && !notifications.length) {
     return (
       <div className="flex justify-center py-20">
         <Spinner />
@@ -239,48 +268,48 @@ export function AdminNotificationsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/90">
-              {rows.length === 0 ? (
+              {notifications.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-3 py-8 text-center text-slate-500">
                     No notifications
                   </td>
                 </tr>
               ) : (
-                rows.map((r) => (
-                  <Fragment key={r.id}>
+                notifications.map((n) => (
+                  <Fragment key={n.id}>
                     <tr className="hover:bg-slate-800/30">
-                      <td className="px-2 py-2 font-mono text-xs">{r.id}</td>
+                      <td className="px-2 py-2 font-mono text-xs">{n.id}</td>
                       <td className="px-2 py-2 text-slate-400">
-                        {r.user_id ?? "—"}
+                        {n.user_id ?? "—"}
                       </td>
                       <td className="max-w-[220px] truncate px-2 py-2 text-slate-300">
-                        {r.message}
+                        {n.message}
                       </td>
-                      <td className="px-2 py-2">{r.channel}</td>
-                      <td className="px-2 py-2">{r.status}</td>
+                      <td className="px-2 py-2">{n.channel}</td>
+                      <td className="px-2 py-2">{n.status}</td>
                       <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">
-                        {formatDate(r.created_at)}
+                        {formatDate(n.created_at)}
                       </td>
                       <td className="px-2 py-2">
                         <div className="flex gap-1">
                           <IconButton
                             variant="ghost"
                             label="Edit"
-                            onClick={() => openEdit(r)}
+                            onClick={() => openEdit(n)}
                           >
                             <PencilIcon />
                           </IconButton>
                           <IconButton
                             variant="danger"
                             label="Delete"
-                            onClick={() => handleRemove(r.id)}
+                            onClick={() => handleRemove(n.id)}
                           >
                             <TrashIcon />
                           </IconButton>
                         </div>
                       </td>
                     </tr>
-                    {editingId === r.id ? (
+                    {editingId === n.id ? (
                       <tr className="bg-primary-950/20">
                         <td colSpan={7} className="p-4">
                           <form onSubmit={handleUpdate} className="space-y-3">
@@ -379,6 +408,17 @@ export function AdminNotificationsPage() {
           </table>
         </div>
       </Card>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => !deleting && setDeleteModal({ isOpen: false, id: null, name: "" })}
+        onConfirm={confirmDelete}
+        title="Delete Notification"
+        message={`Are you sure you want to delete ${deleteModal.name}? This action cannot be undone and may affect associated user deliveries.`}
+        itemName={deleteModal.name}
+        loading={deleting}
+      />
     </div>
   );
 }

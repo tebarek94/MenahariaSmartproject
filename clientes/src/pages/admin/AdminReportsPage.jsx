@@ -1,48 +1,89 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { reportsService } from "@/services/reports.service.js";
+import { adminUsersService } from "@/services/adminUsers.service.js";
+import { rolesService } from "@/services/roles.service.js";
 import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Input } from "@/ui/Input.jsx";
+import { Select } from "@/ui/Select.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
 import { formatDate } from "@/utils/format.js";
 
+function normalizeList(x) {
+  return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
+}
+
 export function AdminReportsPage() {
   const [rows, setRows] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
 
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterSource, setFilterSource] = useState("");
+
   const [cType, setCType] = useState("");
   const [cRange, setCRange] = useState("");
   const [cPath, setCPath] = useState("");
+  const [cSummary, setCSummary] = useState("");
 
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({
     type: "",
     date_range: "",
     file_path: "",
+    source: "manual",
+    status: "active",
+    summary: "",
   });
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const r = await reportsService.list();
-      setRows(Array.isArray(r) ? r : []);
+      const params = {};
+      if (filterStatus.trim()) params.status = filterStatus.trim();
+      if (filterSource.trim()) params.source = filterSource.trim();
+      const [rep, u, rl] = await Promise.all([
+        reportsService.list(params),
+        adminUsersService.list(),
+        rolesService.list(),
+      ]);
+      setRows(normalizeList(rep));
+      setUsers(normalizeList(u));
+      setRoles(normalizeList(rl));
     } catch (e) {
       setError(e?.message || "Failed to load");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filterStatus, filterSource]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const roleName = useCallback(
+    (roleId) => {
+      const r = roles.find((x) => String(x.id) === String(roleId));
+      return r?.name ?? String(roleId ?? "—");
+    },
+    [roles]
+  );
+
+  const activeUsers = useMemo(
+    () =>
+      users.filter(
+        (u) => String(u.status ?? "active").trim().toLowerCase() === "active"
+      ),
+    [users]
+  );
 
   function openEdit(x) {
     setEditingId(x.id);
@@ -50,13 +91,23 @@ export function AdminReportsPage() {
       type: x.type ?? "",
       date_range: x.date_range ?? "",
       file_path: x.file_path ?? "",
+      source: x.source ?? "manual",
+      status: x.status ?? "active",
+      summary: x.summary ?? "",
     });
     setError("");
   }
 
   function closeEdit() {
     setEditingId(null);
-    setEditForm({ type: "", date_range: "", file_path: "" });
+    setEditForm({
+      type: "",
+      date_range: "",
+      file_path: "",
+      source: "manual",
+      status: "active",
+      summary: "",
+    });
   }
 
   async function handleCreate(e) {
@@ -65,15 +116,20 @@ export function AdminReportsPage() {
     setError("");
     setSubmitting(true);
     try {
-      const body = {};
+      const body = {
+        source: "manual",
+        status: "active",
+      };
       if (cType.trim()) body.type = cType.trim();
       if (cRange.trim()) body.date_range = cRange.trim();
       if (cPath.trim()) body.file_path = cPath.trim();
+      if (cSummary.trim()) body.summary = cSummary.trim();
       await reportsService.create(body);
       setNotice("Report created.");
       setCType("");
       setCRange("");
       setCPath("");
+      setCSummary("");
       await refresh();
     } catch (e) {
       setError(e?.data?.message || e?.message || "Create failed");
@@ -93,6 +149,9 @@ export function AdminReportsPage() {
         type: editForm.type.trim() || null,
         date_range: editForm.date_range.trim() || null,
         file_path: editForm.file_path.trim() || null,
+        source: editForm.source || "manual",
+        status: editForm.status || "active",
+        summary: editForm.summary.trim() || null,
       });
       setNotice("Report updated.");
       closeEdit();
@@ -118,7 +177,7 @@ export function AdminReportsPage() {
     }
   }
 
-  if (loading && !rows.length) {
+  if (loading && !rows.length && !users.length) {
     return (
       <div className="flex justify-center py-20">
         <Spinner />
@@ -139,59 +198,156 @@ export function AdminReportsPage() {
         </p>
       ) : null}
 
-      <Card title="Create report row">
-        <form
-          onSubmit={handleCreate}
-          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
-        >
-          <Input
-            label="Type (optional)"
-            value={cType}
-            onChange={(e) => setCType(e.target.value)}
-            placeholder="e.g. revenue"
-          />
-          <Input
-            label="Date range (optional)"
-            value={cRange}
-            onChange={(e) => setCRange(e.target.value)}
-            placeholder="e.g. 2026-03"
-          />
-          <Input
-            label="File path (optional)"
-            value={cPath}
-            onChange={(e) => setCPath(e.target.value)}
-          />
-          <div className="flex items-end">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Creating…" : "Create"}
-            </Button>
-          </div>
-        </form>
+      <Card
+        title="Active registered users"
+        subtitle={`Accounts with status “active” (${activeUsers.length} of ${users.length} loaded). Same list as Users admin; shown here for reporting context.`}
+      >
+        <div className="overflow-x-auto rounded-lg border border-primary-900/30">
+          <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+            <thead className="bg-slate-900/95 text-xs uppercase text-primary-400/90">
+              <tr className="border-b border-primary-900/40">
+                <th className="px-2 py-2">Id</th>
+                <th className="px-2 py-2">Name</th>
+                <th className="px-2 py-2">Phone</th>
+                <th className="px-2 py-2">Email</th>
+                <th className="px-2 py-2">Role</th>
+                <th className="px-2 py-2">Status</th>
+                <th className="px-2 py-2">Registered</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/90">
+              {activeUsers.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="px-3 py-8 text-center text-slate-500"
+                  >
+                    No active users in the loaded list
+                  </td>
+                </tr>
+              ) : (
+                activeUsers.map((u) => (
+                  <tr key={u.id} className="hover:bg-slate-800/30">
+                    <td className="px-2 py-2 font-mono text-xs text-slate-400">
+                      {u.id}
+                    </td>
+                    <td className="max-w-[160px] truncate px-2 py-2 text-slate-200">
+                      {u.full_name ?? "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2 text-slate-400">
+                      {u.phone ?? "—"}
+                    </td>
+                    <td className="max-w-[180px] truncate px-2 py-2 text-slate-500">
+                      {u.email ?? "—"}
+                    </td>
+                    <td className="px-2 py-2 text-slate-400">
+                      {roleName(u.role_id)}
+                    </td>
+                    <td className="px-2 py-2 text-slate-300">{u.status ?? "—"}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">
+                      {formatDate(u.created_at)}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </Card>
 
-      <Card title="All reports">
-        <div className="mb-3">
+      <Card
+        title="Activity & report log"
+        subtitle="Rows with source “auto” are created when users register, admins create users, or trips / tickets / cargo are created. Run DB migration 005 if inserts fail."
+      >
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <Select
+            label="Status"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="min-w-[140px]"
+          >
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="archived">Archived</option>
+          </Select>
+          <Select
+            label="Source"
+            value={filterSource}
+            onChange={(e) => setFilterSource(e.target.value)}
+            className="min-w-[140px]"
+          >
+            <option value="">All sources</option>
+            <option value="manual">Manual</option>
+            <option value="auto">Auto (tasks)</option>
+          </Select>
           <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
             Refresh
           </Button>
         </div>
-        <div className="overflow-x-auto rounded-lg border border-primary-900/30">
-          <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+
+        <div className="mt-2 border-t border-primary-900/25 pt-4">
+          <h3 className="mb-3 text-sm font-semibold text-slate-200">
+            Create manual report row
+          </h3>
+          <form
+            onSubmit={handleCreate}
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          >
+            <Input
+              label="Type (optional)"
+              value={cType}
+              onChange={(e) => setCType(e.target.value)}
+              placeholder="e.g. revenue"
+            />
+            <Input
+              label="Date range (optional)"
+              value={cRange}
+              onChange={(e) => setCRange(e.target.value)}
+              placeholder="e.g. 2026-03"
+            />
+            <Input
+              label="File path (optional)"
+              value={cPath}
+              onChange={(e) => setCPath(e.target.value)}
+            />
+            <Input
+              label="Summary (optional)"
+              value={cSummary}
+              onChange={(e) => setCSummary(e.target.value)}
+              className="sm:col-span-2 lg:col-span-3"
+              placeholder="Short description for this report row"
+            />
+            <div className="flex items-end">
+              <Button type="submit" disabled={submitting}>
+                {submitting ? "Creating…" : "Create"}
+              </Button>
+            </div>
+          </form>
+        </div>
+
+        <div className="mt-6 overflow-x-auto rounded-lg border border-primary-900/30">
+          <table className="w-full min-w-[960px] border-collapse text-left text-sm">
             <thead className="bg-slate-900/95 text-xs uppercase text-primary-400/90">
               <tr className="border-b border-primary-900/40">
                 <th className="px-2 py-2">Id</th>
                 <th className="px-2 py-2">Type</th>
+                <th className="px-2 py-2">Summary</th>
+                <th className="px-2 py-2">Source</th>
+                <th className="px-2 py-2">Status</th>
                 <th className="px-2 py-2">Range</th>
                 <th className="px-2 py-2">File</th>
-                <th className="px-2 py-2">Generated</th>
+                <th className="px-2 py-2">When</th>
                 <th className="px-2 py-2">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/90">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-slate-500">
-                    No reports
+                  <td
+                    colSpan={9}
+                    className="px-3 py-8 text-center text-slate-500"
+                  >
+                    No reports match your filters
                   </td>
                 </tr>
               ) : (
@@ -199,11 +355,18 @@ export function AdminReportsPage() {
                   <Fragment key={r.id}>
                     <tr className="hover:bg-slate-800/30">
                       <td className="px-2 py-2 font-mono text-xs">{r.id}</td>
-                      <td className="px-2 py-2 text-slate-300">{r.type ?? "—"}</td>
-                      <td className="max-w-[140px] truncate px-2 py-2 text-slate-500">
+                      <td className="max-w-[120px] truncate px-2 py-2 text-slate-300">
+                        {r.type ?? "—"}
+                      </td>
+                      <td className="max-w-[220px] truncate px-2 py-2 text-slate-400" title={r.summary ?? ""}>
+                        {r.summary ?? "—"}
+                      </td>
+                      <td className="px-2 py-2 text-slate-400">{r.source ?? "—"}</td>
+                      <td className="px-2 py-2 text-slate-300">{r.status ?? "—"}</td>
+                      <td className="max-w-[120px] truncate px-2 py-2 text-slate-500">
                         {r.date_range ?? "—"}
                       </td>
-                      <td className="max-w-[180px] truncate px-2 py-2 text-slate-500">
+                      <td className="max-w-[120px] truncate px-2 py-2 text-slate-500">
                         {r.file_path ?? "—"}
                       </td>
                       <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">
@@ -230,9 +393,9 @@ export function AdminReportsPage() {
                     </tr>
                     {editingId === r.id ? (
                       <tr className="bg-primary-950/20">
-                        <td colSpan={6} className="p-4">
+                        <td colSpan={9} className="p-4">
                           <form onSubmit={handleUpdate} className="space-y-3">
-                            <div className="grid gap-3 sm:grid-cols-3">
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                               <Input
                                 label="Type"
                                 value={editForm.type}
@@ -262,6 +425,43 @@ export function AdminReportsPage() {
                                     file_path: e.target.value,
                                   }))
                                 }
+                              />
+                              <Select
+                                label="Source"
+                                value={editForm.source}
+                                onChange={(e) =>
+                                  setEditForm((f) => ({
+                                    ...f,
+                                    source: e.target.value,
+                                  }))
+                                }
+                              >
+                                <option value="manual">manual</option>
+                                <option value="auto">auto</option>
+                              </Select>
+                              <Select
+                                label="Status"
+                                value={editForm.status}
+                                onChange={(e) =>
+                                  setEditForm((f) => ({
+                                    ...f,
+                                    status: e.target.value,
+                                  }))
+                                }
+                              >
+                                <option value="active">active</option>
+                                <option value="archived">archived</option>
+                              </Select>
+                              <Input
+                                label="Summary"
+                                value={editForm.summary}
+                                onChange={(e) =>
+                                  setEditForm((f) => ({
+                                    ...f,
+                                    summary: e.target.value,
+                                  }))
+                                }
+                                className="lg:col-span-2"
                               />
                             </div>
                             <div className="flex gap-2">

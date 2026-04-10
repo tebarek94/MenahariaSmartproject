@@ -5,13 +5,18 @@ import { Button } from "@/ui/Button.jsx";
 import { Input } from "@/ui/Input.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
-import { CheckIcon, TrashIcon } from "@/ui/icons.jsx";
+import { CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
+import { DeleteModal } from "@/components/DeleteModal.jsx";
 
 export function AdminPermissionsPage() {
   const [permissions, setPermissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
+  const [deleting, setDeleting] = useState(false);
   const [newName, setNewName] = useState("");
   const [edits, setEdits] = useState({});
 
@@ -72,17 +77,42 @@ export function AdminPermissionsPage() {
   }
 
   async function handleRemove(id) {
-    if (!window.confirm("Delete this permission?")) return;
+    const permission = permissions.find(p => p.id === id);
+    setDeleteModal({ isOpen: true, id, name: permission?.name || `Permission #${id}` });
+  }
+
+  const confirmDelete = async () => {
+    const { id } = deleteModal;
     setError("");
     setNotice("");
+    setDeleting(true);
+    
     try {
       await permissionsService.remove(id);
-      setNotice("Permission deleted.");
+      setNotice("Permission deleted successfully.");
+      setDeleteModal({ isOpen: false, id: null, name: "" });
       await refresh();
-    } catch (e) {
-      setError(e?.message || "Delete failed");
+    } catch (err) {
+      console.error("Delete permission error:", err);
+      let errorMessage = "Failed to delete permission.";
+      
+      if (err.status === 500) {
+        errorMessage = "Server error occurred. The permission may be assigned to roles and cannot be deleted.";
+      } else if (err.status === 403) {
+        errorMessage = "You don't have permission to delete this permission.";
+      } else if (err.status === 404) {
+        errorMessage = "Permission not found. It may have already been deleted.";
+      } else if (err.data?.message) {
+        errorMessage = err.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setDeleting(false);
     }
-  }
+  };
 
   if (loading && !permissions.length) {
     return (
@@ -169,6 +199,17 @@ export function AdminPermissionsPage() {
           )}
         </div>
       </Card>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => !deleting && setDeleteModal({ isOpen: false, id: null, name: "" })}
+        onConfirm={confirmDelete}
+        title="Delete Permission"
+        message={`Are you sure you want to delete the permission "${deleteModal.name}"? This action cannot be undone and may affect roles that use this permission.`}
+        itemName={`Permission "${deleteModal.name}"`}
+        loading={deleting}
+      />
     </div>
   );
 }

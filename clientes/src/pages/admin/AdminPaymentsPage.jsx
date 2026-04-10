@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { paymentsService } from "@/services/payments.service.js";
 import { ticketsService } from "@/services/tickets.service.js";
+import { adminUsersService } from "@/services/adminUsers.service.js";
 import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Input } from "@/ui/Input.jsx";
@@ -8,6 +9,7 @@ import { Select } from "@/ui/Select.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
+import { DeleteModal } from "@/components/DeleteModal.jsx";
 import { formatDate, formatMoney, localInputToSqlDatetime, toDatetimeLocalValue } from "@/utils/format.js";
 
 const METHODS = ["cash", "mobile", "bank"];
@@ -29,18 +31,14 @@ function paidAtToBody(localVal) {
 export function AdminPaymentsPage() {
   const [payments, setPayments] = useState([]);
   const [tickets, setTickets] = useState([]);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
-
-  const [cTicket, setCTicket] = useState("");
-  const [cAmount, setCAmount] = useState("");
-  const [cMethod, setCMethod] = useState("cash");
-  const [cRef, setCRef] = useState("");
-  const [cStatus, setCStatus] = useState("pending");
-  const [cPaidAt, setCPaidAt] = useState("");
+  const [selectedPayment, setSelectedPayment] = useState(null);
+  const [showDetails, setShowDetails] = useState(false);
 
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -56,12 +54,14 @@ export function AdminPaymentsPage() {
     setLoading(true);
     setError("");
     try {
-      const [p, t] = await Promise.all([
+      const [p, t, u] = await Promise.all([
         paymentsService.list(),
         ticketsService.list(),
+        adminUsersService.list(),
       ]);
       setPayments(Array.isArray(p) ? p : []);
       setTickets(Array.isArray(t) ? t : []);
+      setUsers(Array.isArray(u) ? u : []);
     } catch (e) {
       setError(e?.message || "Failed to load");
     } finally {
@@ -72,6 +72,42 @@ export function AdminPaymentsPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const handleViewDetails = async (payment) => {
+    try {
+      const paymentDetails = await paymentsService.getById(payment.id);
+      setSelectedPayment(paymentDetails);
+      setShowDetails(true);
+    } catch (err) {
+      console.error("Failed to load payment details:", err);
+      setError("Failed to load payment details");
+    }
+  };
+
+  const handleCloseDetails = () => {
+    setShowDetails(false);
+    setSelectedPayment(null);
+  };
+
+  const getUserName = (userId) => {
+    const user = users.find(u => u.id === userId);
+    return user?.full_name || `User #${userId}`;
+  };
+
+  const getTicketInfo = (ticketId) => {
+    const ticket = tickets.find(t => t.id === ticketId);
+    return ticket ? `Ticket #${ticket.id}` : "N/A";
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case "completed": return "text-green-400";
+      case "pending": return "text-yellow-400";
+      case "failed": return "text-red-400";
+      case "refunded": return "text-blue-400";
+      default: return "text-gray-400";
+    }
+  };
 
   const ticketOptions = useMemo(() => {
     return tickets.map((t) => {
@@ -113,42 +149,6 @@ export function AdminPaymentsPage() {
     });
   }
 
-  async function handleCreate(e) {
-    e.preventDefault();
-    setNotice("");
-    setError("");
-    if (cAmount === "" || !cMethod) {
-      setError("Amount and method are required.");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const body = {
-        amount: Number(cAmount),
-        method: cMethod,
-        status: cStatus,
-      };
-      if (cTicket) body.ticket_id = Number(cTicket);
-      const ref = cRef.trim();
-      body.transaction_ref = ref || generateTransactionRef();
-      const paid = paidAtToBody(cPaidAt);
-      if (paid) body.paid_at = paid;
-      await paymentsService.create(body);
-      setNotice("Payment created.");
-      setCTicket("");
-      setCAmount("");
-      setCMethod("cash");
-      setCRef("");
-      setCStatus("pending");
-      setCPaidAt("");
-      await refresh();
-    } catch (e) {
-      setError(e?.data?.message || e?.message || "Create failed");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   async function handleUpdate(e) {
     e.preventDefault();
     if (editingId == null) return;
@@ -181,20 +181,6 @@ export function AdminPaymentsPage() {
     }
   }
 
-  async function handleRemove(id) {
-    if (!window.confirm("Delete this payment?")) return;
-    setError("");
-    setNotice("");
-    if (editingId === id) closeEdit();
-    try {
-      await paymentsService.remove(id);
-      setNotice("Payment deleted.");
-      await refresh();
-    } catch (e) {
-      setError(e?.message || "Delete failed");
-    }
-  }
-
   if (loading && !payments.length) {
     return (
       <div className="flex justify-center py-20">
@@ -216,75 +202,7 @@ export function AdminPaymentsPage() {
         </p>
       ) : null}
 
-      <Card title="Create payment">
-        <form
-          onSubmit={handleCreate}
-          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-        >
-          <Select
-            label="Ticket (optional)"
-            value={cTicket}
-            onChange={(e) => setCTicket(e.target.value)}
-          >
-            <option value="">—</option>
-            {ticketOptions.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
-          </Select>
-          <Input
-            label="Amount"
-            type="number"
-            step="0.01"
-            min="0"
-            value={cAmount}
-            onChange={(e) => setCAmount(e.target.value)}
-            required
-          />
-          <Select
-            label="Method"
-            value={cMethod}
-            onChange={(e) => setCMethod(e.target.value)}
-            required
-          >
-            {METHODS.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </Select>
-          <Input
-            label="Transaction ref (optional)"
-            value={cRef}
-            onChange={(e) => setCRef(e.target.value)}
-          />
-          <Select
-            label="Status"
-            value={cStatus}
-            onChange={(e) => setCStatus(e.target.value)}
-          >
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </Select>
-          <Input
-            label="Paid at (optional)"
-            type="datetime-local"
-            value={cPaidAt}
-            onChange={(e) => setCPaidAt(e.target.value)}
-          />
-          <div className="flex items-end">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Creating…" : "Create"}
-            </Button>
-          </div>
-        </form>
-      </Card>
-
-      <Card title="All payments">
+      <Card title="Payments">
         <div className="mb-3">
           <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
             Refresh
@@ -328,17 +246,17 @@ export function AdminPaymentsPage() {
                         <div className="flex gap-1">
                           <IconButton
                             variant="ghost"
-                            label="Edit"
+                            label="View Details"
+                            onClick={() => handleViewDetails(p)}
+                          >
+                            <CheckIcon />
+                          </IconButton>
+                          <IconButton
+                            variant="ghost"
+                            label="Update Status"
                             onClick={() => openEdit(p)}
                           >
                             <PencilIcon />
-                          </IconButton>
-                          <IconButton
-                            variant="danger"
-                            label="Delete"
-                            onClick={() => handleRemove(p.id)}
-                          >
-                            <TrashIcon />
                           </IconButton>
                         </div>
                       </td>
@@ -347,64 +265,10 @@ export function AdminPaymentsPage() {
                       <tr className="bg-primary-950/20">
                         <td colSpan={7} className="p-4">
                           <form onSubmit={handleUpdate} className="space-y-3">
-                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                              <Select
-                                label="Ticket"
-                                value={editForm.ticket_id}
-                                onChange={(e) =>
-                                  setEditForm((f) => ({
-                                    ...f,
-                                    ticket_id: e.target.value,
-                                  }))
-                                }
-                              >
-                                <option value="">—</option>
-                                {ticketOptions.map((t) => (
-                                  <option key={t.id} value={t.id}>
-                                    {t.label}
-                                  </option>
-                                ))}
-                              </Select>
-                              <Input
-                                label="Amount"
-                                type="number"
-                                step="0.01"
-                                value={editForm.amount}
-                                onChange={(e) =>
-                                  setEditForm((f) => ({
-                                    ...f,
-                                    amount: e.target.value,
-                                  }))
-                                }
-                                required
-                              />
-                              <Select
-                                label="Method"
-                                value={editForm.method}
-                                onChange={(e) =>
-                                  setEditForm((f) => ({
-                                    ...f,
-                                    method: e.target.value,
-                                  }))
-                                }
-                                required
-                              >
-                                {METHODS.map((m) => (
-                                  <option key={m} value={m}>
-                                    {m}
-                                  </option>
-                                ))}
-                              </Select>
-                              <Input
-                                label="Transaction ref"
-                                value={editForm.transaction_ref}
-                                onChange={(e) =>
-                                  setEditForm((f) => ({
-                                    ...f,
-                                    transaction_ref: e.target.value,
-                                  }))
-                                }
-                              />
+                            <p className="text-xs font-medium text-primary-300">
+                              Update Payment Status - Payment #{p.id}
+                            </p>
+                            <div className="grid gap-3 sm:grid-cols-2">
                               <Select
                                 label="Status"
                                 value={editForm.status}
@@ -414,7 +278,6 @@ export function AdminPaymentsPage() {
                                     status: e.target.value,
                                   }))
                                 }
-                                required
                               >
                                 {STATUSES.map((s) => (
                                   <option key={s} value={s}>
@@ -423,9 +286,9 @@ export function AdminPaymentsPage() {
                                 ))}
                               </Select>
                               <Input
-                                label="Paid at"
+                                label="Paid At"
                                 type="datetime-local"
-                                value={editForm.paid_at}
+                                value={toDatetimeLocalValue(editForm.paid_at)}
                                 onChange={(e) =>
                                   setEditForm((f) => ({
                                     ...f,
@@ -438,7 +301,7 @@ export function AdminPaymentsPage() {
                               <IconButton
                                 variant="primary"
                                 type="submit"
-                                label="Save"
+                                label="Update Status"
                                 disabled={savingEdit}
                               >
                                 <CheckIcon />
@@ -463,6 +326,119 @@ export function AdminPaymentsPage() {
           </table>
         </div>
       </Card>
+
+      {/* Payment Details Modal */}
+      {showDetails && selectedPayment && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 rounded-lg border border-slate-700 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-xl font-bold text-white mb-2">Payment Details</h2>
+                  <p className="text-slate-400">Transaction ID: #{selectedPayment.id}</p>
+                </div>
+                <Button variant="ghost" onClick={handleCloseDetails}>
+                  <XIcon />
+                </Button>
+              </div>
+
+              <div className="space-y-6">
+                {/* Payment Summary */}
+                <div className="bg-slate-800 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-white mb-4">Payment Summary</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-slate-400">Amount</p>
+                      <p className="text-lg font-bold text-green-400">{formatMoney(selectedPayment.amount)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-400">Status</p>
+                      <span className={`text-sm font-medium ${getStatusColor(selectedPayment.status)}`}>
+                        {selectedPayment.status?.toUpperCase()}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-400">Payment Method</p>
+                      <p className="text-white">{selectedPayment.method?.replace('_', ' ')}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-400">Transaction Reference</p>
+                      <p className="text-white">{selectedPayment.transaction_ref || 'N/A'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* User Information */}
+                <div className="bg-slate-800 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-white mb-4">User Information</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-slate-400">Customer Name</p>
+                      <p className="text-white">{getUserName(selectedPayment.user_id)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-400">User ID</p>
+                      <p className="text-white">#{selectedPayment.user_id}</p>
+                    </div>
+                    {selectedPayment.ticket_id && (
+                      <>
+                        <div>
+                          <p className="text-sm text-slate-400">Associated Ticket</p>
+                          <p className="text-white">{getTicketInfo(selectedPayment.ticket_id)}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-slate-400">Ticket ID</p>
+                          <p className="text-white">#{selectedPayment.ticket_id}</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Timeline */}
+                <div className="bg-slate-800 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-white mb-4">Transaction Timeline</h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Created</span>
+                      <span className="text-white">{formatDate(selectedPayment.created_at)}</span>
+                    </div>
+                    {selectedPayment.paid_at && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Paid At</span>
+                        <span className="text-white">{formatDate(selectedPayment.paid_at)}</span>
+                      </div>
+                    )}
+                    {selectedPayment.updated_at && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Last Updated</span>
+                        <span className="text-white">{formatDate(selectedPayment.updated_at)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3">
+                  {selectedPayment.status === 'pending' && (
+                    <Button variant="primary">
+                      Mark as Completed
+                    </Button>
+                  )}
+                  {selectedPayment.status === 'completed' && (
+                    <Button variant="secondary">
+                      Process Refund
+                    </Button>
+                  )}
+                  <Button variant="ghost" onClick={handleCloseDetails}>
+                    Close
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

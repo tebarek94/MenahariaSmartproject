@@ -6,6 +6,8 @@ import { validateId } from "../middleware/validateId.js";
 
 const router = express.Router();
 
+router.get("/public/browse", tripController.getPublicBrowse);
+
 router.use(verifyToken, attachRole);
 
 router.post("/", requireAdmin, tripController.create);

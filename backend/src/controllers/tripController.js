@@ -1,6 +1,35 @@
 import * as tripModel from "../models/tripModel.js";
 import { sendSuccess, sendError } from "../utils/apiResponse.js";
 import { isAdmin, isDriver, isPassenger } from "../constants/roles.js";
+import { logAutoReportTask } from "../utils/reportActivity.js";
+
+async function assertDriverAvailableForWindow(
+  res,
+  driverId,
+  departureTime,
+  arrivalTime,
+  excludeTripId = null
+) {
+  if (driverId == null || driverId === "") return true;
+  const id = Number(driverId);
+  if (!Number.isInteger(id) || id <= 0) return true;
+  const rows = await tripModel.findDriverOverlappingTrips(
+    id,
+    departureTime,
+    arrivalTime ?? null,
+    excludeTripId
+  );
+  if (rows.length) {
+    const o = rows[0];
+    sendError(
+      res,
+      `This driver is already assigned to trip #${o.id} (starts ${o.departure_time}) with an overlapping time window. Choose another driver or change departure/arrival so trips do not overlap.`,
+      409
+    );
+    return false;
+  }
+  return true;
+}
 
 export const create = async (req, res) => {
   try {
@@ -23,6 +52,14 @@ export const create = async (req, res) => {
         400
       );
     }
+    const okDriver = await assertDriverAvailableForWindow(
+      res,
+      driver_id,
+      departure_time,
+      arrival_time ?? null,
+      null
+    );
+    if (!okDriver) return;
     const result = await tripModel.createTrip(
       Number(route_id),
       Number(vehicle_id),
@@ -32,9 +69,26 @@ export const create = async (req, res) => {
       Number(price),
       status
     );
+    void logAutoReportTask({
+      type: "trip_scheduled",
+      summary: `Trip #${result.insertId}: route ${route_id}, vehicle ${vehicle_id}${
+        driver_id != null ? `, driver ${driver_id}` : ""
+      }`,
+      date_range: `trip_id:${result.insertId}`,
+    });
     return sendSuccess(res, { message: "Trip created", id: result.insertId }, 201);
   } catch (err) {
     return sendError(res, "Failed to create trip", 500, err);
+  }
+};
+
+/** Public: upcoming scheduled/ongoing trips for marketing / landing (no auth). */
+export const getPublicBrowse = async (req, res) => {
+  try {
+    const rows = await tripModel.getTripsForPassengerBrowse();
+    return sendSuccess(res, rows);
+  } catch (err) {
+    return sendError(res, "Failed to list trips", 500, err);
   }
 };
 
@@ -112,6 +166,14 @@ export const update = async (req, res) => {
         400
       );
     }
+    const okDriver = await assertDriverAvailableForWindow(
+      res,
+      driver_id,
+      departure_time,
+      arrival_time ?? null,
+      Number(req.params.id)
+    );
+    if (!okDriver) return;
     await tripModel.updateTrip(
       req.params.id,
       Number(route_id),

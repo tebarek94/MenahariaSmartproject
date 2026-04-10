@@ -6,11 +6,16 @@ import { validateId } from "../middleware/validateId.js";
 
 const router = express.Router();
 
-router.use(verifyToken, attachRole, requireAdmin);
+router.use(verifyToken, attachRole);
+
+/** Passenger (and any authenticated user with matching cargo): own receipts + view one by id */
+router.get("/my", cargoReceiptController.getMine);
+router.get("/:id", validateId, cargoReceiptController.getById);
+
+router.use(requireAdmin);
 
 router.post("/", cargoReceiptController.create);
 router.get("/", cargoReceiptController.getAll);
-router.get("/:id", validateId, cargoReceiptController.getById);
 router.put("/:id", validateId, cargoReceiptController.update);
 router.delete("/:id", validateId, cargoReceiptController.remove);
 

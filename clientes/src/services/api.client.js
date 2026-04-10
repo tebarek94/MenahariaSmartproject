@@ -1,4 +1,10 @@
 import { API_BASE, STORAGE_KEYS } from "@/utils/constants.js";
+import { clearClientSession } from "@/services/authSession.js";
+
+function isPublicAuthRequest(path) {
+  const p = path.replace(/^\//, "").toLowerCase();
+  return p === "api/login" || p === "api/register";
+}
 
 /**
  * Low-level HTTP client aligned with Express API (Bearer JWT).
@@ -30,6 +36,13 @@ async function request(path, { method = "GET", body, headers = {} } = {}) {
   }
 
   if (!res.ok) {
+    if (
+      res.status === 401 &&
+      token &&
+      !isPublicAuthRequest(path)
+    ) {
+      clearClientSession();
+    }
     const err = new Error(data?.message || res.statusText || "Request failed");
     err.status = res.status;
     err.data = data;

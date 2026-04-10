@@ -4,13 +4,15 @@ export function normalizeRoleName(name) {
     .toLowerCase();
 }
 
-/** Treat these as the passenger / end-user role in the database. */
-const PASSENGER_ALIASES = new Set([
+/** DB `roles.name` values treated as passenger / end-user (lowercased). */
+export const PASSENGER_ROLE_NAMES = [
   "passenger",
   "user",
   "customer",
   "client",
-]);
+];
+
+const PASSENGER_ALIASES = new Set(PASSENGER_ROLE_NAMES);
 
 export function isAdmin(roleName) {
   return normalizeRoleName(roleName) === "admin";

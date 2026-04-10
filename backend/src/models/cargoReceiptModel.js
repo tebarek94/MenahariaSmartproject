@@ -40,6 +40,20 @@ export const getAllCargoReceiptsBrief = () =>
      ORDER BY cr.issued_at DESC`
   );
 
+/** Receipts for cargo owned by this user (passenger dashboard). */
+export const getCargoReceiptsBriefForOwner = (ownerUserId) =>
+  queryAsync(
+    `SELECT ${receiptBriefSelect}
+     FROM cargo_receipts cr
+     INNER JOIN cargo c ON c.id = cr.cargo_id AND c.owner_id = ?
+     LEFT JOIN users o ON o.id = c.owner_id
+     LEFT JOIN trips t ON t.id = c.trip_id
+     LEFT JOIN routes r ON r.id = t.route_id
+     LEFT JOIN vehicles v ON v.id = t.vehicle_id
+     ORDER BY cr.issued_at DESC`,
+    [ownerUserId]
+  );
+
 export const getCargoReceiptById = (id) =>
   queryAsync("SELECT * FROM cargo_receipts WHERE id = ?", [id]);
 
@@ -54,6 +68,15 @@ export const getCargoReceiptBriefById = (id) =>
      LEFT JOIN vehicles v ON v.id = t.vehicle_id
      WHERE cr.id = ?`,
     [id]
+  );
+
+export const getCargoOwnerIdForReceipt = (receiptId) =>
+  queryAsync(
+    `SELECT c.owner_id
+     FROM cargo_receipts cr
+     LEFT JOIN cargo c ON c.id = cr.cargo_id
+     WHERE cr.id = ?`,
+    [receiptId]
   );
 
 export const updateCargoReceipt = (id, cargoId, amount) =>

@@ -11,6 +11,7 @@ import { DataTable } from "@/ui/DataTable.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
+import { DeleteModal } from "@/components/DeleteModal.jsx";
 
 export function AdminSeatsPage() {
   const relationsView = useAsync(() => viewsService.seatsRelations(150));
@@ -22,6 +23,8 @@ export function AdminSeatsPage() {
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
+  const [deleting, setDeleting] = useState(false);
 
   const [cVehicle, setCVehicle] = useState("");
   const [cNum, setCNum] = useState("");
@@ -126,19 +129,44 @@ export function AdminSeatsPage() {
   }
 
   async function handleRemove(id) {
-    if (!window.confirm("Delete this seat?")) return;
+    const seat = seats.find(s => s.id === id);
+    setDeleteModal({ isOpen: true, id, name: `Seat #${id}` });
+  }
+
+  const confirmDelete = async () => {
+    const { id } = deleteModal;
     setError("");
     setNotice("");
+    setDeleting(true);
+    
     if (editingId === id) closeEdit();
+    
     try {
       await seatsService.remove(id);
-      setNotice("Seat deleted.");
+      setNotice("Seat deleted successfully.");
+      setDeleteModal({ isOpen: false, id: null, name: "" });
       await refresh();
-      relationsView.run().catch(() => {});
-    } catch (e) {
-      setError(e?.message || "Delete failed");
+    } catch (err) {
+      console.error("Delete seat error:", err);
+      let errorMessage = "Failed to delete seat.";
+      
+      if (err.status === 500) {
+        errorMessage = "Server error occurred. The seat may be referenced by tickets.";
+      } else if (err.status === 403) {
+        errorMessage = "You don't have permission to delete this seat.";
+      } else if (err.status === 404) {
+        errorMessage = "Seat not found. It may have already been deleted.";
+      } else if (err.data?.message) {
+        errorMessage = err.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setDeleting(false);
     }
-  }
+  };
 
   if (loading && !seats.length) {
     return (
@@ -332,6 +360,17 @@ export function AdminSeatsPage() {
           </>
         )}
       </Card>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => !deleting && setDeleteModal({ isOpen: false, id: null, name: "" })}
+        onConfirm={confirmDelete}
+        title="Delete Seat"
+        message={`Are you sure you want to delete ${deleteModal.name}? This action cannot be undone and may affect associated tickets.`}
+        itemName={deleteModal.name}
+        loading={deleting}
+      />
     </div>
   );
 }

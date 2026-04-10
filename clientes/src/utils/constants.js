@@ -5,7 +5,12 @@ export const API_BASE =
 export const STORAGE_KEYS = {
   TOKEN: "menahariya_token",
   USER: "menahariya_user",
+  /** After Chapa checkout redirect, verify with this tx_ref once. */
+  CHAPA_PENDING_TX_REF: "menahariya_chapa_pending_tx_ref",
 };
+
+/** Same-tab refresh after updating localStorage (storage event only fires across tabs). */
+export const AUTH_LOCAL_SYNC_EVENT = "menahariya_auth_local_sync";
 
 /** DB `roles.id` for admin row (override if your seed differs). */
 export const ADMIN_ROLE_ID =
@@ -20,7 +25,23 @@ export const ROUTES = {
   LOGIN: "/login",
   ADMIN_LOGIN: "/admin/login",
   ADMIN_REGISTER: "/admin/register",
+  ADMIN_PROFILE: "/admin/profile",
   DASHBOARD: "/dashboard",
+  DRIVER_DASHBOARD: "/driver/dashboard",
+  DRIVER_TRIPS: "/driver/trips",
+  DRIVER_PASSENGERS: "/driver/passengers",
+  DRIVER_CARGO: "/driver/cargo",
+  DRIVER_NOTIFICATIONS: "/driver/notifications",
+  DRIVER_PROFILE: "/driver/profile",
+  DRIVER_LOGIN: "/driver/login",
+  /** Passenger app */
+  PASSENGER_DASHBOARD: "/passenger/dashboard",
+  PASSENGER_BOOK: "/passenger/book",
+  PASSENGER_TICKETS: "/passenger/tickets",
+  PASSENGER_PROFILE: "/passenger/profile",
+  PASSENGER_CARGO_TRACK: "/passenger/cargo/track",
+  PASSENGER_REGISTER: "/register",
+  MY_TICKETS: "/my-tickets",
   /** RBAC (backend: /api/users, /roles, /permissions, /role-permissions) */
   ADMIN_USERS: "/admin/users",
   ADMIN_ROLES: "/admin/roles",
@@ -40,4 +61,4 @@ export const ROUTES = {
   ADMIN_REPORTS: "/admin/reports",
   /** Read-only joined views */
   ADMIN_RELATIONS: "/admin/relations",
-};
+  };

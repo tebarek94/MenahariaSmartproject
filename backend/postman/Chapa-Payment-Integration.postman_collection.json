@@ -1,0 +1,347 @@
+{
+	"info": {
+		"_postman_id": "chapa-payment-integration",
+		"name": "Menahariya Smart - Chapa Payment Integration",
+		"description": "API collection for testing Chapa payment integration in Menahariya Smart transport system",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{jwt_token}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "jwt_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "ticket_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "payment_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "tx_ref",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('jwt_token', response.token);",
+									"    pm.collectionVariables.set('user_id', response.user.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phone\": \"0912345678\",\n    \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"login"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Chapa Payment",
+			"item": [
+				{
+					"name": "Get Chapa Configuration",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/payments/chapa/config",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"payments",
+								"chapa",
+								"config"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Initialize Chapa Payment",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('payment_id', response.data.payment_id);",
+									"    pm.collectionVariables.set('tx_ref', response.data.tx_ref);",
+									"    console.log('Payment initialized:', response.data);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"ticket_id\": {{ticket_id}},\n    \"amount\": 100.00,\n    \"email\": \"test@example.com\",\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"phone_number\": \"0912345678\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/payments/chapa/initialize",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"payments",
+								"chapa",
+								"initialize"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Verify Chapa Payment",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/payments/chapa/verify/{{tx_ref}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"payments",
+								"chapa",
+								"verify",
+								"{{tx_ref}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Test Webhook (Manual)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "chapa-signature",
+								"value": "test-signature",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"tx_ref\": \"{{tx_ref}}\",\n    \"status\": \"success\",\n    \"ref_id\": \"CHAPA_REF_123456\",\n    \"amount\": \"100.00\",\n    \"currency\": \"ETB\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/payments/chapa/webhook",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"payments",
+								"chapa",
+								"webhook"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Payment Management",
+			"item": [
+				{
+					"name": "Get All Payments",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/payments",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"payments"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Payment by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/payments/{{payment_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"payments",
+								"{{payment_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Legacy Payment",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"ticket_id\": {{ticket_id}},\n    \"amount\": 100.00,\n    \"method\": \"cash\",\n    \"status\": \"pending\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/payments",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"payments"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Supporting Data",
+			"item": [
+				{
+					"name": "Get Tickets",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/tickets",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"tickets"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Trips",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/trips",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"trips"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get User Profile",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"profile"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}

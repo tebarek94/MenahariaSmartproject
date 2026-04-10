@@ -18,18 +18,18 @@ router.get(
   viewController.adminDashboard
 );
 router.get(
-  "/driver-dashboard",
-  verifyToken,
-  attachRole,
-  requireDriver,
-  viewController.driverDashboard
-);
-router.get(
   "/passenger-dashboard",
   verifyToken,
   attachRole,
   requirePassenger,
   viewController.passengerDashboard
+);
+router.get(
+  "/driver-dashboard",
+  verifyToken,
+  attachRole,
+  requireDriver,
+  viewController.driverDashboard
 );
 
 /** Joined relation views (admin): query ?limit=1–200, default 50 */

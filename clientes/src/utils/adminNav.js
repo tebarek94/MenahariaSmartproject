@@ -27,6 +27,12 @@ export const ADMIN_NAV_SECTIONS = [
     ],
   },
   {
+    title: "Account",
+    items: [
+      { to: ROUTES.ADMIN_PROFILE, label: "Profile", end: true },
+    ],
+  },
+  {
     title: "Views",
     items: [
       { to: ROUTES.ADMIN_RELATIONS, label: "All relations", end: true },
@@ -39,6 +45,7 @@ export const ADMIN_NAV = ADMIN_NAV_SECTIONS.flatMap((s) => s.items);
 
 export const ADMIN_PAGE_TITLES = {
   [ROUTES.DASHBOARD]: "Overview",
+  [ROUTES.ADMIN_PROFILE]: "Profile",
   [ROUTES.ADMIN_USERS]: "Users",
   [ROUTES.ADMIN_ROLES]: "Roles",
   [ROUTES.ADMIN_PERMISSIONS]: "Permissions",

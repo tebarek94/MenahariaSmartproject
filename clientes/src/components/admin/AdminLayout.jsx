@@ -1,35 +1,17 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { Outlet } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth.js";
+import { useTheme } from "@/contexts/ThemeContext.jsx";
 import { AdminSidebar } from "./AdminSidebar.jsx";
 import { AdminHeader } from "./AdminHeader.jsx";
 
-const ADMIN_THEME_KEY = "admin_theme_mode";
-
 export function AdminLayout() {
   const auth = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [theme, setTheme] = useState(() => {
-    try {
-      return localStorage.getItem(ADMIN_THEME_KEY) || "dark";
-    } catch {
-      return "dark";
-    }
-  });
 
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
   const openSidebar = useCallback(() => setSidebarOpen(true), []);
-  const toggleTheme = useCallback(() => {
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(ADMIN_THEME_KEY, theme);
-    } catch {
-      // no-op
-    }
-  }, [theme]);
 
   const isLight = theme === "light";
 

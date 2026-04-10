@@ -2,14 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  /** Passenger / marketing: readable in light (no `dark` on html) and dark mode */
+  .text-p-heading {
+    @apply text-apptext dark:text-white;
+  }
+  .text-p-muted {
+    @apply text-slate-600 dark:text-slate-400;
+  }
+  .text-p-body {
+    @apply text-slate-700 dark:text-slate-300;
+  }
+  .text-p-subtle {
+    @apply text-slate-500 dark:text-slate-500;
+  }
+}
+
 @layer base {
   html {
     @apply scroll-smooth;
     font-size: 18px;
   }
   body {
-    @apply text-apptext;
-    background: #f2f2f2;
+    @apply min-h-dvh antialiased transition-colors duration-200;
+  }
+  html:not(.dark) body {
+    @apply bg-appbg text-apptext;
+  }
+  html.dark body {
+    @apply bg-slate-950 text-slate-100;
   }
   ::selection {
     @apply bg-primary-700/80 text-white;

@@ -8,3 +8,12 @@ export function normalizeRoleName(name) {
 export function isAdminRole(roleName) {
   return normalizeRoleName(roleName) === "admin";
 }
+
+export function isDriverRole(roleName) {
+  return normalizeRoleName(roleName) === "driver";
+}
+
+export function isPassengerRole(roleName) {
+  const passengerAliases = ["passenger", "user", "customer", "client"];
+  return passengerAliases.includes(normalizeRoleName(roleName));
+}

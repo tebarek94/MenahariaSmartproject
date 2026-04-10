@@ -1,5 +1,37 @@
 import { queryAsync } from "../config/db.js";
 
+/** Hours assumed for overlap when arrival_time is null (driver busy until then). */
+const DEFAULT_BLOCK_HOURS = 6;
+
+/**
+ * Other trips (same driver) whose time window overlaps this one.
+ * Windows: [departure, COALESCE(arrival, departure + DEFAULT_BLOCK_HOURS)].
+ * Ignores cancelled/completed trips. excludeTripId for updates.
+ */
+export const findDriverOverlappingTrips = (
+  driverId,
+  newDeparture,
+  newArrival,
+  excludeTripId = null
+) =>
+  queryAsync(
+    `SELECT t.id, t.departure_time, t.arrival_time, t.status
+     FROM trips t
+     WHERE t.driver_id = ?
+       AND (? IS NULL OR t.id <> ?)
+       AND LOWER(TRIM(COALESCE(t.status, ''))) NOT IN ('cancelled', 'completed')
+       AND ? < COALESCE(t.arrival_time, DATE_ADD(t.departure_time, INTERVAL ${DEFAULT_BLOCK_HOURS} HOUR))
+       AND t.departure_time < COALESCE(?, DATE_ADD(?, INTERVAL ${DEFAULT_BLOCK_HOURS} HOUR))`,
+    [
+      driverId,
+      excludeTripId,
+      excludeTripId,
+      newDeparture,
+      newArrival,
+      newDeparture,
+    ]
+  );
+
 export const createTrip = (
   routeId,
   vehicleId,

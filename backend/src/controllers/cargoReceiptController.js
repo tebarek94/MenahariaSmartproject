@@ -1,5 +1,6 @@
 import * as cargoReceiptModel from "../models/cargoReceiptModel.js";
 import { sendSuccess, sendError } from "../utils/apiResponse.js";
+import { isAdmin, isPassenger } from "../constants/roles.js";
 
 export const create = async (req, res) => {
   try {
@@ -15,6 +16,25 @@ export const create = async (req, res) => {
     );
   } catch (err) {
     return sendError(res, "Failed to create cargo receipt", 500, err);
+  }
+};
+
+/** Passenger: receipts linked to their cargo only. */
+export const getMine = async (req, res) => {
+  try {
+    if (!isPassenger(req.roleName)) {
+      return sendError(res, "Forbidden", 403);
+    }
+    const rows = await cargoReceiptModel.getCargoReceiptsBriefForOwner(
+      req.user.id
+    );
+    const withSummary = rows.map((row) => ({
+      ...row,
+      brief_description: buildReceiptBrief(row),
+    }));
+    return sendSuccess(res, withSummary);
+  } catch (err) {
+    return sendError(res, "Failed to list your cargo receipts", 500, err);
   }
 };
 
@@ -47,6 +67,20 @@ export const getById = async (req, res) => {
     const rows = await cargoReceiptModel.getCargoReceiptBriefById(req.params.id);
     if (!rows.length) return sendError(res, "Receipt not found", 404);
     const row = rows[0];
+
+    if (!isAdmin(req.roleName)) {
+      if (!isPassenger(req.roleName)) {
+        return sendError(res, "Forbidden", 403);
+      }
+      const oc = await cargoReceiptModel.getCargoOwnerIdForReceipt(
+        req.params.id
+      );
+      const ownerId = oc[0]?.owner_id;
+      if (ownerId == null || Number(ownerId) !== Number(req.user.id)) {
+        return sendError(res, "Forbidden", 403);
+      }
+    }
+
     return sendSuccess(res, {
       ...row,
       brief_description: buildReceiptBrief(row),

@@ -1,28 +1,27 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useAsync } from "@/hooks/useAsync.js";
 import { vehiclesService } from "@/services/vehicles.service.js";
-import { viewsService } from "@/services/views.service.js";
 import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Input } from "@/ui/Input.jsx";
 import { Select } from "@/ui/Select.jsx";
-import { DataTable } from "@/ui/DataTable.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
+import { DeleteModal } from "@/components/DeleteModal.jsx";
 import { formatDate } from "@/utils/format.js";
 
 const VEHICLE_STATUSES = ["active", "inactive", "maintenance"];
 
 export function AdminVehiclesPage() {
-  const relationsView = useAsync(() => viewsService.vehiclesRelations(50));
-
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
+  const [deleting, setDeleting] = useState(false);
 
   const [cPlate, setCPlate] = useState("");
   const [cModel, setCModel] = useState("");
@@ -54,32 +53,6 @@ export function AdminVehiclesPage() {
     refreshList();
   }, [refreshList]);
 
-  useEffect(() => {
-    relationsView.run().catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function openEdit(v) {
-    setEditingId(v.id);
-    setEditForm({
-      plate_number: v.plate_number ?? "",
-      model: v.model ?? "",
-      capacity: String(v.capacity ?? ""),
-      status: v.status ?? "active",
-    });
-    setError("");
-  }
-
-  function closeEdit() {
-    setEditingId(null);
-    setEditForm({
-      plate_number: "",
-      model: "",
-      capacity: "",
-      status: "active",
-    });
-  }
-
   async function handleCreate(e) {
     e.preventDefault();
     setNotice("");
@@ -109,7 +82,6 @@ export function AdminVehiclesPage() {
       setCCapacity("");
       setCStatus("active");
       await refreshList();
-      relationsView.run().catch(() => {});
     } catch (e) {
       setError(
         e?.data?.message || e?.message || "Create failed"
@@ -151,7 +123,6 @@ export function AdminVehiclesPage() {
       setNotice("Vehicle updated.");
       closeEdit();
       await refreshList();
-      relationsView.run().catch(() => {});
     } catch (e) {
       setError(e?.data?.message || e?.message || "Update failed");
     } finally {
@@ -160,19 +131,64 @@ export function AdminVehiclesPage() {
   }
 
   async function handleRemove(id) {
-    if (!window.confirm("Delete this vehicle? Trips or seats may reference it."))
-      return;
+    const vehicle = vehicles.find(v => v.id === id);
+    setDeleteModal({ isOpen: true, id, name: vehicle?.plate_number || `Vehicle #${id}` });
+  }
+
+  const confirmDelete = async () => {
+    const { id } = deleteModal;
     setError("");
     setNotice("");
+    setDeleting(true);
+    
     if (editingId === id) closeEdit();
+    
     try {
       await vehiclesService.remove(id);
-      setNotice("Vehicle deleted.");
+      setNotice("Vehicle deleted successfully.");
+      setDeleteModal({ isOpen: false, id: null, name: "" });
       await refreshList();
-      relationsView.run().catch(() => {});
-    } catch (e) {
-      setError(e?.message || "Delete failed");
+    } catch (err) {
+      console.error("Delete vehicle error:", err);
+      let errorMessage = "Failed to delete vehicle.";
+      
+      if (err.status === 500) {
+        errorMessage = "Server error occurred. The vehicle may be referenced by trips or seats.";
+      } else if (err.status === 403) {
+        errorMessage = "You don't have permission to delete this vehicle.";
+      } else if (err.status === 404) {
+        errorMessage = "Vehicle not found. It may have already been deleted.";
+      } else if (err.data?.message) {
+        errorMessage = err.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setDeleting(false);
     }
+  };
+
+  function openEdit(v) {
+    setEditingId(v.id);
+    setEditForm({
+      plate_number: v.plate_number ?? "",
+      model: v.model ?? "",
+      capacity: String(v.capacity ?? ""),
+      status: v.status ?? "active",
+    });
+    setError("");
+  }
+
+  function closeEdit() {
+    setEditingId(null);
+    setEditForm({
+      plate_number: "",
+      model: "",
+      capacity: "",
+      status: "active",
+    });
   }
 
   if (loading && !vehicles.length) {
@@ -318,7 +334,7 @@ export function AdminVehiclesPage() {
                             className="space-y-4"
                           >
                             <p className="text-xs font-medium text-primary-300">
-                              Edit vehicle #{v.id}
+                              Edit vehicle {v.name}
                             </p>
                             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                               <Input
@@ -408,39 +424,16 @@ export function AdminVehiclesPage() {
         </div>
       </Card>
 
-     
-        {relationsView.loading && !relationsView.data ? (
-          <div className="flex justify-center py-12">
-            <Spinner />
-          </div>
-        ) : relationsView.error ? (
-          <p className="text-sm text-red-400">{relationsView.error.message}</p>
-        ) : (
-          <div className="space-y-6">
-            <p className="text-xs text-slate-500">
-              limit {relationsView.data?.limit ?? "—"}
-            </p>
-            <div>
-              <h3 className="mb-2 text-sm font-medium text-slate-300">
-                Fleet summary
-              </h3>
-              <DataTable
-                rows={relationsView.data?.fleet_summary}
-                emptyMessage="No rows"
-              />
-            </div>
-            <div>
-              <h3 className="mb-2 text-sm font-medium text-slate-300">
-                Recent trips sample
-              </h3>
-              <DataTable
-                rows={relationsView.data?.recent_trips_sample}
-                emptyMessage="No trips"
-              />
-            </div>
-          </div>
-        )}
-     
+      {/* Delete Confirmation Modal */}
+      <DeleteModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => !deleting && setDeleteModal({ isOpen: false, id: null, name: "" })}
+        onConfirm={confirmDelete}
+        title="Delete Vehicle"
+        message={`Are you sure you want to delete the vehicle "${deleteModal.name}"? This action cannot be undone and may affect associated trips or seats.`}
+        itemName={`Vehicle "${deleteModal.name}"`}
+        loading={deleting}
+      />
     </div>
   );
 }

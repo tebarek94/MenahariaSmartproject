@@ -1,4 +1,5 @@
 import db, { queryAsync } from "../config/db.js";
+import { PASSENGER_ROLE_NAMES } from "../constants/roles.js";
 
 // CREATE USER
 export const createUser = (data, callback) => {
@@ -58,6 +59,29 @@ export const createUserAsync = (
   );
 
 export const getAllUsersAsync = () => queryAsync("SELECT * FROM users ORDER BY id");
+
+/** Active users whose role is a passenger-type role (excludes admin/driver). */
+export const getPassengerUsersAsync = () => {
+  const placeholders = PASSENGER_ROLE_NAMES.map(() => "?").join(", ");
+  return queryAsync(
+    `SELECT u.*, r.name AS role_name
+     FROM users u
+     INNER JOIN roles r ON r.id = u.role_id
+     WHERE LOWER(TRIM(r.name)) IN (${placeholders})
+       AND (u.status IS NULL OR LOWER(TRIM(u.status)) <> 'inactive')
+     ORDER BY u.id`,
+    PASSENGER_ROLE_NAMES
+  );
+};
+
+export const getUserWithRoleById = (id) =>
+  queryAsync(
+    `SELECT u.*, r.name AS role_name
+     FROM users u
+     INNER JOIN roles r ON r.id = u.role_id
+     WHERE u.id = ?`,
+    [id]
+  );
 
 export const getUserByIdAsync = (id) =>
   queryAsync("SELECT * FROM users WHERE id = ?", [id]);

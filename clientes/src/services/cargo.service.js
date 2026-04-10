@@ -5,6 +5,8 @@ export const cargoService = {
   list: () => api.get("/api/cargo"),
   get: (id) => api.get(`/api/cargo/${id}`),
   create: (body) => api.post("/api/cargo", body),
+  /** Admin: { trip_id, scope: "ids"|"pending"|"all", cargo_ids?, confirm? } */
+  bulkAssignTrip: (body) => api.post("/api/cargo/bulk-assign-trip", body),
   update: (id, body) => api.put(`/api/cargo/${id}`, body),
   remove: (id) => api.delete(`/api/cargo/${id}`),
 };

@@ -9,6 +9,7 @@ const router = express.Router();
 router.use(verifyToken, attachRole);
 
 router.post("/", cargoController.create);
+router.post("/bulk-assign-trip", cargoController.bulkAssignTrip);
 router.get("/", cargoController.getAll);
 router.get("/:id", validateId, cargoController.getById);
 router.put("/:id", validateId, cargoController.update);

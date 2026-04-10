@@ -1,7 +1,9 @@
 import * as cargoModel from "../models/cargoModel.js";
+import * as tripModel from "../models/tripModel.js";
 import { sendSuccess, sendError } from "../utils/apiResponse.js";
 import { resolveCargoFee } from "../utils/cargoFee.js";
 import { isAdmin, isDriver, isPassenger } from "../constants/roles.js";
+import { logAutoReportTask } from "../utils/reportActivity.js";
 
 function canAccessCargoRow(req, row) {
   if (isAdmin(req.roleName)) return true;
@@ -47,6 +49,12 @@ export const create = async (req, res) => {
       tracking_code,
       status
     );
+    void logAutoReportTask({
+      type: "cargo_booked",
+      summary: `Cargo #${result.insertId}: owner ${owner_id}, trip ${trip_id}, ${weight} kg`,
+      date_range: `trip_id:${trip_id}`,
+      file_path: `cargo_id:${result.insertId}`,
+    });
     return sendSuccess(
       res,
       {
@@ -70,7 +78,7 @@ export const getAll = async (req, res) => {
       return sendSuccess(res, rows);
     }
     if (isPassenger(req.roleName)) {
-      const rows = await cargoModel.getCargoByOwnerId(req.user.id);
+      const rows = await cargoModel.getCargoByOwnerIdWithTrip(req.user.id);
       return sendSuccess(res, rows);
     }
     if (isDriver(req.roleName)) {
@@ -150,6 +158,62 @@ export const update = async (req, res) => {
     });
   } catch (err) {
     return sendError(res, "Failed to update cargo", 500, err);
+  }
+};
+
+/**
+ * Admin: assign cargo to a trip (drivers see cargo via trip.driver_id).
+ * Body: { trip_id, scope: "ids" | "pending" | "all", cargo_ids?: number[], confirm?: "ASSIGN_ALL" }
+ */
+export const bulkAssignTrip = async (req, res) => {
+  try {
+    if (!isAdmin(req.roleName)) {
+      return sendError(res, "Forbidden", 403);
+    }
+    const { trip_id, scope, cargo_ids: rawIds, confirm } = req.body ?? {};
+    const tid = Number(trip_id);
+    if (!Number.isFinite(tid) || tid <= 0) {
+      return sendError(res, "trip_id is required", 400);
+    }
+    const trips = await tripModel.getTripById(tid);
+    if (!trips.length) {
+      return sendError(res, "Trip not found", 404);
+    }
+
+    let result;
+    if (scope === "ids") {
+      const cargo_ids = Array.isArray(rawIds) ? rawIds : [];
+      if (!cargo_ids.length) {
+        return sendError(res, "cargo_ids is required when scope is ids", 400);
+      }
+      result = await cargoModel.bulkAssignCargoToTrip(tid, cargo_ids);
+    } else if (scope === "pending") {
+      result = await cargoModel.bulkAssignAllPendingToTrip(tid);
+    } else if (scope === "all") {
+      if (confirm !== "ASSIGN_ALL") {
+        return sendError(
+          res,
+          'Send confirm: "ASSIGN_ALL" to reassign every cargo row to this trip',
+          400
+        );
+      }
+      result = await cargoModel.bulkAssignAllCargoToTrip(tid);
+    } else {
+      return sendError(
+        res,
+        'scope must be "ids", "pending", or "all"',
+        400
+      );
+    }
+
+    const affectedRows = result?.affectedRows ?? 0;
+    return sendSuccess(res, {
+      message: "Cargo trip assignment completed",
+      affectedRows,
+      trip_id: tid,
+    });
+  } catch (err) {
+    return sendError(res, "Failed to assign cargo to trip", 500, err);
   }
 };
 

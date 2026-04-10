@@ -10,9 +10,25 @@ import { Select } from "@/ui/Select.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
+import { DeleteModal } from "@/components/DeleteModal.jsx";
 import { formatDate, localInputToSqlDatetime, toDatetimeLocalValue } from "@/utils/format.js";
 
 const TRIP_STATUSES = ["scheduled", "ongoing", "completed", "cancelled"];
+
+/** Plate + model for selects and tables (no raw id in the label). */
+function vehicleDisplayName(v) {
+  if (!v) return "";
+  const plate = String(v.plate_number ?? "").trim();
+  const model = String(v.model ?? "").trim();
+  if (plate && model) return `${plate} · ${model}`;
+  return plate || model || "";
+}
+
+function driverDisplayName(u) {
+  if (!u) return "";
+  const name = String(u.full_name ?? "").trim();
+  return name || "";
+}
 
 export function AdminTripsPage() {
   const [trips, setTrips] = useState([]);
@@ -24,6 +40,8 @@ export function AdminTripsPage() {
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
+  const [deleting, setDeleting] = useState(false);
 
   const [cRoute, setCRoute] = useState("");
   const [cVehicle, setCVehicle] = useState("");
@@ -70,13 +88,61 @@ export function AdminTripsPage() {
   }, [refresh]);
 
   const driverOptions = useMemo(() => {
-    const activeUsers = users.filter(
-      (u) => String(u?.status ?? "active").toLowerCase() !== "inactive"
+    return users.filter(
+      (u) =>
+        String(u?.status ?? "active").toLowerCase() !== "inactive" &&
+        Number(u?.role_id) === 2
     );
-    const drivers = activeUsers.filter((u) => Number(u?.role_id) === 2);
-    // Fallback for environments where role_id data is not fully seeded.
-    return drivers.length ? drivers : activeUsers;
   }, [users]);
+
+  /** Keep assigned driver visible when editing even if role/status changed. */
+  const driverOptionsForEdit = useMemo(() => {
+    const id = editForm.driver_id ? Number(editForm.driver_id) : NaN;
+    if (!Number.isFinite(id) || id <= 0) return driverOptions;
+    if (driverOptions.some((u) => Number(u.id) === id)) return driverOptions;
+    const assigned = users.find((u) => Number(u.id) === id);
+    return assigned ? [...driverOptions, assigned] : driverOptions;
+  }, [driverOptions, editForm.driver_id, users]);
+
+  const routeById = useMemo(() => {
+    const m = new Map();
+    for (const r of routes) m.set(Number(r.id), r);
+    return m;
+  }, [routes]);
+
+  const vehicleById = useMemo(() => {
+    const m = new Map();
+    for (const v of vehicles) m.set(Number(v.id), v);
+    return m;
+  }, [vehicles]);
+
+  const userById = useMemo(() => {
+    const m = new Map();
+    for (const u of users) m.set(Number(u.id), u);
+    return m;
+  }, [users]);
+
+  function tripRouteLabel(routeId) {
+    const r = routeById.get(Number(routeId));
+    return r
+      ? `${r.origin} → ${r.destination}`
+      : routeId != null
+        ? `Route #${routeId}`
+        : "—";
+  }
+
+  function tripVehicleLabel(vehicleId) {
+    const v = vehicleById.get(Number(vehicleId));
+    const label = vehicleDisplayName(v);
+    return label || (vehicleId != null ? `Vehicle #${vehicleId}` : "—");
+  }
+
+  function tripDriverLabel(driverId) {
+    if (driverId == null || driverId === "") return "—";
+    const u = userById.get(Number(driverId));
+    const label = driverDisplayName(u);
+    return label || `Driver #${driverId}`;
+  }
 
   function openEdit(x) {
     setEditingId(x.id);
@@ -197,18 +263,44 @@ export function AdminTripsPage() {
   }
 
   async function handleRemove(id) {
-    if (!window.confirm("Delete this trip?")) return;
+    const trip = trips.find(t => t.id === id);
+    setDeleteModal({ isOpen: true, id, name: `Trip #${id}` });
+  }
+
+  const confirmDelete = async () => {
+    const { id } = deleteModal;
     setError("");
     setNotice("");
+    setDeleting(true);
+    
     if (editingId === id) closeEdit();
+    
     try {
       await tripsService.remove(id);
-      setNotice("Trip deleted.");
+      setNotice("Trip deleted successfully.");
+      setDeleteModal({ isOpen: false, id: null, name: "" });
       await refresh();
-    } catch (e) {
-      setError(e?.message || "Delete failed");
+    } catch (err) {
+      console.error("Delete trip error:", err);
+      let errorMessage = "Failed to delete trip.";
+      
+      if (err.status === 500) {
+        errorMessage = "Server error occurred. The trip may have associated tickets or seats.";
+      } else if (err.status === 403) {
+        errorMessage = "You don't have permission to delete this trip.";
+      } else if (err.status === 404) {
+        errorMessage = "Trip not found. It may have already been deleted.";
+      } else if (err.data?.message) {
+        errorMessage = err.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setDeleting(false);
     }
-  }
+  };
 
   if (loading && !trips.length) {
     return (
@@ -242,10 +334,10 @@ export function AdminTripsPage() {
             onChange={(e) => setCRoute(e.target.value)}
             required
           >
-            <option value="">Select…</option>
+            <option value="">Select route…</option>
             {routes.map((r) => (
-              <option key={r.id} value={r.id}>
-                #{r.id} {r.origin} → {r.destination}
+              <option key={r.id} value={r.id} title={`Route ID ${r.id}`}>
+                {r.origin} → {r.destination}
               </option>
             ))}
           </Select>
@@ -255,18 +347,22 @@ export function AdminTripsPage() {
             onChange={(e) => setCVehicle(e.target.value)}
             required
           >
-            <option value="">Select…</option>
+            <option value="">Select vehicle…</option>
             {vehicles.map((v) => (
-              <option key={v.id} value={v.id}>
-                #{v.id} {v.plate_number || v.model || "vehicle"}
+              <option
+                key={v.id}
+                value={v.id}
+                title={`ID ${v.id}`}
+              >
+                {vehicleDisplayName(v) || `Vehicle #${v.id}`}
               </option>
             ))}
           </Select>
           <Select label="Driver (optional)" value={cDriver} onChange={(e) => setCDriver(e.target.value)}>
-            <option value="">—</option>
+            <option value="">No driver</option>
             {driverOptions.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.full_name} (#{u.id})
+              <option key={u.id} value={u.id} title={`ID ${u.id}`}>
+                {driverDisplayName(u) || `Driver #${u.id}`}
               </option>
             ))}
           </Select>
@@ -318,7 +414,7 @@ export function AdminTripsPage() {
           </Button>
         </div>
         <div className="overflow-x-auto rounded-lg border border-primary-900/30">
-          <table className="w-full min-w-[900px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[1040px] border-collapse text-left text-sm">
             <thead className="bg-slate-900/95 text-xs uppercase text-primary-400/90">
               <tr className="border-b border-primary-900/40">
                 <th className="px-2 py-2">Id</th>
@@ -326,6 +422,7 @@ export function AdminTripsPage() {
                 <th className="px-2 py-2">Vehicle</th>
                 <th className="px-2 py-2">Driver</th>
                 <th className="px-2 py-2">Departure</th>
+                <th className="px-2 py-2">Arrival</th>
                 <th className="px-2 py-2">Price</th>
                 <th className="px-2 py-2">Status</th>
                 <th className="px-2 py-2">Actions</th>
@@ -334,7 +431,7 @@ export function AdminTripsPage() {
             <tbody className="divide-y divide-slate-800/90">
               {trips.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-slate-500">
+                  <td colSpan={9} className="px-3 py-8 text-center text-slate-500">
                     No trips
                   </td>
                 </tr>
@@ -343,13 +440,20 @@ export function AdminTripsPage() {
                   <Fragment key={t.id}>
                     <tr className="hover:bg-slate-800/30">
                       <td className="px-2 py-2 font-mono text-xs">{t.id}</td>
-                      <td className="px-2 py-2 text-slate-400">{t.route_id}</td>
-                      <td className="px-2 py-2 text-slate-400">{t.vehicle_id}</td>
-                      <td className="px-2 py-2 text-slate-400">
-                        {t.driver_id ?? "—"}
+                      <td className="max-w-[200px] truncate px-2 py-2 text-slate-300" title={String(t.route_id ?? "")}>
+                        {tripRouteLabel(t.route_id)}
+                      </td>
+                      <td className="max-w-[180px] truncate px-2 py-2 text-slate-300" title={String(t.vehicle_id ?? "")}>
+                        {tripVehicleLabel(t.vehicle_id)}
+                      </td>
+                      <td className="max-w-[140px] truncate px-2 py-2 text-slate-300" title={t.driver_id != null ? String(t.driver_id) : ""}>
+                        {tripDriverLabel(t.driver_id)}
                       </td>
                       <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">
                         {formatDate(t.departure_time)}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">
+                        {t.arrival_time ? formatDate(t.arrival_time) : "—"}
                       </td>
                       <td className="px-2 py-2">{t.price}</td>
                       <td className="px-2 py-2">{t.status}</td>
@@ -374,7 +478,7 @@ export function AdminTripsPage() {
                     </tr>
                     {editingId === t.id ? (
                       <tr className="bg-primary-950/20">
-                        <td colSpan={8} className="p-4">
+                        <td colSpan={9} className="p-4">
                           <form onSubmit={handleUpdate} className="space-y-3">
                             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                               <Select
@@ -389,8 +493,8 @@ export function AdminTripsPage() {
                                 required
                               >
                                 {routes.map((r) => (
-                                  <option key={r.id} value={r.id}>
-                                    #{r.id} {r.origin}→{r.destination}
+                                  <option key={r.id} value={r.id} title={`Route ID ${r.id}`}>
+                                    {r.origin} → {r.destination}
                                   </option>
                                 ))}
                               </Select>
@@ -406,8 +510,8 @@ export function AdminTripsPage() {
                                 required
                               >
                                 {vehicles.map((v) => (
-                                  <option key={v.id} value={v.id}>
-                                    #{v.id} {v.plate_number || v.model}
+                                  <option key={v.id} value={v.id} title={`ID ${v.id}`}>
+                                    {vehicleDisplayName(v) || `Vehicle #${v.id}`}
                                   </option>
                                 ))}
                               </Select>
@@ -421,10 +525,10 @@ export function AdminTripsPage() {
                                   }))
                                 }
                               >
-                                <option value="">—</option>
-                                {driverOptions.map((u) => (
-                                  <option key={u.id} value={u.id}>
-                                    {u.full_name} (#{u.id})
+                                <option value="">No driver</option>
+                                {driverOptionsForEdit.map((u) => (
+                                  <option key={u.id} value={u.id} title={`ID ${u.id}`}>
+                                    {driverDisplayName(u) || `Driver #${u.id}`}
                                   </option>
                                 ))}
                               </Select>
@@ -511,6 +615,17 @@ export function AdminTripsPage() {
           </table>
         </div>
       </Card>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => !deleting && setDeleteModal({ isOpen: false, id: null, name: "" })}
+        onConfirm={confirmDelete}
+        title="Delete Trip"
+        message={`Are you sure you want to delete ${deleteModal.name}? This action cannot be undone and may affect associated tickets or seats.`}
+        itemName={deleteModal.name}
+        loading={deleting}
+      />
     </div>
   );
 }

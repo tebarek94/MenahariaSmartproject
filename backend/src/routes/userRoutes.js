@@ -9,6 +9,7 @@ const router = express.Router();
 router.use(verifyToken, attachRole);
 
 router.post("/", userController.create);
+router.get("/passengers", userController.listPassengers);
 router.get("/", userController.getAll);
 router.get("/:id", validateId, userController.getById);
 router.put("/:id", validateId, userController.update);

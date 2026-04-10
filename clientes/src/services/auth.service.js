@@ -1,6 +1,7 @@
 import { api } from "./api.client.js";
 import { ADMIN_ROLE_ID, STORAGE_KEYS } from "@/utils/constants.js";
-import { isAdminRole } from "@/utils/roles.js";
+import { clearClientSession } from "@/services/authSession.js";
+import { isAdminRole, isDriverRole } from "@/utils/roles.js";
 
 export const authService = {
   async login(phone, password) {
@@ -30,6 +31,21 @@ export const authService = {
     return data;
   },
 
+  /** Same as login, then rejects (and clears session) if JWT role is not driver. */
+  async loginAsDriver(phone, password) {
+    const data = await this.login(phone, password);
+    const role = data?.role_name;
+    if (!isDriverRole(role)) {
+      this.logout();
+      const err = new Error(
+        "This account is not a driver. Use the correct driver credentials."
+      );
+      err.code = "NOT_DRIVER";
+      throw err;
+    }
+    return data;
+  },
+
   async registerAdmin({ full_name, phone, email, password }) {
     return api.post("/api/register", {
       full_name,
@@ -49,8 +65,7 @@ export const authService = {
   },
 
   logout() {
-    localStorage.removeItem(STORAGE_KEYS.TOKEN);
-    localStorage.removeItem(STORAGE_KEYS.USER);
+    clearClientSession();
   },
 
   getToken() {

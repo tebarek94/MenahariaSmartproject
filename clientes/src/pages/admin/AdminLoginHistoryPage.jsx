@@ -9,15 +9,22 @@ import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
 import { formatDate } from "@/utils/format.js";
+import { DeleteModal } from "@/components/DeleteModal.jsx";
 
 export function AdminLoginHistoryPage() {
   const [rows, setRows] = useState([]);
+  const [filteredRows, setFilteredRows] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // Search and filter states
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterUser, setFilterUser] = useState("");
+  const [filterDateRange, setFilterDateRange] = useState("all");
 
   const [cUser, setCUser] = useState("");
   const [cDevice, setCDevice] = useState("");
@@ -30,25 +37,100 @@ export function AdminLoginHistoryPage() {
     ip_address: "",
   });
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null });
+
+  // Filter and search functionality
+  useEffect(() => {
+    let filtered = [...rows];
+
+    // Search filter
+    if (searchTerm) {
+      filtered = filtered.filter(row => 
+        (row.device_info && row.device_info.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (row.ip_address && row.ip_address.includes(searchTerm)) ||
+        (row.user_id && row.user_id.toString().includes(searchTerm))
+      );
+    }
+
+    // User filter
+    if (filterUser) {
+      filtered = filtered.filter(row => row.user_id == filterUser);
+    }
+
+    // Date range filter
+    if (filterDateRange !== "all") {
+      const now = new Date();
+      const filterDate = new Date();
+      
+      switch(filterDateRange) {
+        case "today":
+          filterDate.setHours(0, 0, 0, 0);
+          break;
+        case "week":
+          filterDate.setDate(now.getDate() - 7);
+          break;
+        case "month":
+          filterDate.setMonth(now.getMonth() - 1);
+          break;
+        default:
+          break;
+      }
+
+      if (filterDateRange !== "all") {
+        filtered = filtered.filter(row => {
+          const loginDate = new Date(row.login_time);
+          return loginDate >= filterDate;
+        });
+      }
+    }
+
+    setFilteredRows(filtered);
+  }, [rows, searchTerm, filterUser, filterDateRange]);
+
+  const refresh = useCallback(async (options = {}) => {
+    const silent = Boolean(options.silent);
+    if (!silent) {
+      setLoading(true);
+    }
     setError("");
     try {
       const [h, u] = await Promise.all([
         loginHistoryService.list(),
         adminUsersService.list(),
       ]);
-      setRows(Array.isArray(h) ? h : []);
-      setUsers(Array.isArray(u) ? u : []);
+      const list = Array.isArray(h) ? h : Array.isArray(h?.data) ? h.data : [];
+      setRows(list);
+      setUsers(Array.isArray(u) ? u : Array.isArray(u?.data) ? u.data : []);
     } catch (e) {
-      setError(e?.message || "Failed to load");
+      if (!silent) {
+        setError(e?.message || "Failed to load");
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     refresh();
+  }, [refresh]);
+
+  /** Keep the table current while this page is open (no manual refresh needed). */
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      refresh({ silent: true });
+    }, 60_000);
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh({ silent: true });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [refresh]);
 
   function openEdit(x) {
@@ -77,7 +159,7 @@ export function AdminLoginHistoryPage() {
       if (cDevice.trim()) body.device_info = cDevice.trim();
       if (cIp.trim()) body.ip_address = cIp.trim();
       await loginHistoryService.create(body);
-      setNotice("Record created.");
+      setNotice("Login history record created successfully.");
       setCUser("");
       setCDevice("");
       setCIp("");
@@ -101,7 +183,7 @@ export function AdminLoginHistoryPage() {
         device_info: editForm.device_info.trim() || null,
         ip_address: editForm.ip_address.trim() || null,
       });
-      setNotice("Record updated.");
+      setNotice("Login history record updated successfully.");
       closeEdit();
       await refresh();
     } catch (e) {
@@ -112,18 +194,28 @@ export function AdminLoginHistoryPage() {
   }
 
   async function handleRemove(id) {
-    if (!window.confirm("Delete this login history row?")) return;
+    setDeleteModal({ isOpen: true, id });
+  }
+
+  const confirmDelete = async () => {
+    const { id } = deleteModal;
     setError("");
     setNotice("");
     if (editingId === id) closeEdit();
     try {
       await loginHistoryService.remove(id);
-      setNotice("Deleted.");
+      setNotice("Login history record deleted successfully.");
+      setDeleteModal({ isOpen: false, id: null });
       await refresh();
     } catch (e) {
       setError(e?.message || "Delete failed");
     }
-  }
+  };
+
+  const getUserName = (userId) => {
+    const user = users.find((u) => Number(u.id) === Number(userId));
+    return user ? user.full_name : `User #${userId}`;
+  };
 
   if (loading && !rows.length) {
     return (
@@ -134,19 +226,79 @@ export function AdminLoginHistoryPage() {
   }
 
   return (
-    <div className="space-y-8">
-      {notice ? (
-        <p className="rounded-lg border border-primary-800/50 bg-primary-950/40 px-3 py-2 text-sm text-primary-200">
-          {notice}
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-white">
+          Login History
+        </h2>
+        <p className="text-sm text-primary-400/80">
+          Logins are recorded automatically when users sign in. This list refreshes on load, every
+          minute while you stay on this page, and when you return to the tab.
         </p>
+      </div>
+
+      {notice ? (
+        <div className="rounded-lg border border-green-500/30 bg-green-900/20 px-4 py-3 text-sm text-green-400">
+          {notice}
+        </div>
       ) : null}
       {error ? (
-        <p className="text-sm text-red-400" role="alert">
+        <div className="rounded-lg border border-red-500/30 bg-red-900/20 px-4 py-3 text-sm text-red-400">
           {error}
-        </p>
+        </div>
       ) : null}
 
-      <Card title="Create login history row">
+      {/* Search and Filter Controls */}
+      <Card title="Search & Filter" className="!p-6">
+        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+          <Input
+            placeholder="Search by device, IP, or user ID..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          
+          <Select 
+            label="Filter by User" 
+            value={filterUser} 
+            onChange={(e) => setFilterUser(e.target.value)}
+          >
+            <option value="">All Users</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.full_name}
+              </option>
+            ))}
+          </Select>
+
+          <Select 
+            label="Date Range" 
+            value={filterDateRange} 
+            onChange={(e) => setFilterDateRange(e.target.value)}
+          >
+            <option value="all">All Time</option>
+            <option value="today">Today</option>
+            <option value="week">Last 7 Days</option>
+            <option value="month">Last 30 Days</option>
+          </Select>
+
+          <div className="flex items-end">
+            <Button 
+              variant="ghost" 
+              onClick={() => {
+                setSearchTerm("");
+                setFilterUser("");
+                setFilterDateRange("all");
+              }}
+              className="w-full"
+            >
+              Clear Filters
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* Create New Record */}
+      <Card title="Create Login History Record" className="!p-6">
         <form
           onSubmit={handleCreate}
           className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
@@ -163,68 +315,92 @@ export function AdminLoginHistoryPage() {
             label="Device info (optional)"
             value={cDevice}
             onChange={(e) => setCDevice(e.target.value)}
+            placeholder="e.g., Chrome on Windows"
           />
           <Input
-            label="IP (optional)"
+            label="IP Address (optional)"
             value={cIp}
             onChange={(e) => setCIp(e.target.value)}
+            placeholder="e.g., 192.168.1.1"
           />
           <div className="flex items-end">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Saving…" : "Create"}
+            <Button type="submit" disabled={submitting} className="w-full">
+              {submitting ? "Creating…" : "Create Record"}
             </Button>
           </div>
         </form>
       </Card>
 
-      <Card title="All login history">
-        <div className="mb-3">
+      {/* Login History Table */}
+      <Card title="Login History Records" className="!p-6">
+        <div className="mb-4 flex justify-between items-center">
+          <div className="text-sm text-primary-400/80">
+            Showing {filteredRows.length} of {rows.length} records
+          </div>
           <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
-            Refresh
+            Refresh now
           </Button>
         </div>
+
         <div className="overflow-x-auto rounded-lg border border-primary-900/30">
-          <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[800px] border-collapse text-left text-sm">
             <thead className="bg-slate-900/95 text-xs uppercase text-primary-400/90">
               <tr className="border-b border-primary-900/40">
-                <th className="px-2 py-2">Id</th>
-                <th className="px-2 py-2">User</th>
-                <th className="px-2 py-2">Device</th>
-                <th className="px-2 py-2">IP</th>
-                <th className="px-2 py-2">Time</th>
-                <th className="px-2 py-2">Actions</th>
+                <th className="px-4 py-3 text-left font-medium">ID</th>
+                <th className="px-4 py-3 text-left font-medium">User</th>
+                <th className="px-4 py-3 text-left font-medium">Device Info</th>
+                <th className="px-4 py-3 text-left font-medium">IP Address</th>
+                <th className="px-4 py-3 text-left font-medium">Login Time</th>
+                <th className="px-4 py-3 text-center font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/90">
-              {rows.length === 0 ? (
+              {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-slate-500">
-                    No rows
+                  <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
+                    <div className="space-y-2">
+                      <p className="text-lg font-medium">No login history records found</p>
+                      <p className="text-sm">Try adjusting your search filters or create a new record</p>
+                    </div>
                   </td>
                 </tr>
               ) : (
-                rows.map((r) => (
+                filteredRows.map((r) => (
                   <Fragment key={r.id}>
-                    <tr className="hover:bg-slate-800/30">
-                      <td className="px-2 py-2 font-mono text-xs">{r.id}</td>
-                      <td className="px-2 py-2 text-slate-400">
-                        {r.user_id ?? "—"}
+                    <tr className="hover:bg-slate-800/30 transition-colors">
+                      <td className="px-4 py-3 font-mono text-xs text-primary-300">#{r.id}</td>
+                      <td className="px-4 py-3">
+                        {r.user_id ? (
+                          <div className="flex items-center space-x-2">
+                            <div className="h-6 w-6 rounded-full bg-primary-500/20 flex items-center justify-center">
+                              <span className="text-xs font-medium text-primary-300">
+                                {getUserName(r.user_id).charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                            <span className="text-slate-300">{getUserName(r.user_id)}</span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-500">—</span>
+                        )}
                       </td>
-                      <td className="max-w-[160px] truncate px-2 py-2 text-slate-500">
-                        {r.device_info ?? "—"}
+                      <td className="max-w-[200px] truncate px-4 py-3 text-slate-400">
+                        {r.device_info || "—"}
                       </td>
-                      <td className="px-2 py-2 text-slate-500">
-                        {r.ip_address ?? "—"}
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-xs text-slate-400">
+                          {r.ip_address || "—"}
+                        </span>
                       </td>
-                      <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">
+                      <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">
                         {formatDate(r.login_time)}
                       </td>
-                      <td className="px-2 py-2">
-                        <div className="flex gap-1">
+                      <td className="px-4 py-3">
+                        <div className="flex justify-center gap-1">
                           <IconButton
                             variant="ghost"
                             label="Edit"
                             onClick={() => openEdit(r)}
+                            className="hover:bg-primary-800/30"
                           >
                             <PencilIcon />
                           </IconButton>
@@ -232,6 +408,7 @@ export function AdminLoginHistoryPage() {
                             variant="danger"
                             label="Delete"
                             onClick={() => handleRemove(r.id)}
+                            className="hover:bg-red-900/30"
                           >
                             <TrashIcon />
                           </IconButton>
@@ -241,8 +418,8 @@ export function AdminLoginHistoryPage() {
                     {editingId === r.id ? (
                       <tr className="bg-primary-950/20">
                         <td colSpan={6} className="p-4">
-                          <form onSubmit={handleUpdate} className="space-y-3">
-                            <div className="grid gap-3 sm:grid-cols-3">
+                          <form onSubmit={handleUpdate} className="space-y-4">
+                            <div className="grid gap-4 sm:grid-cols-3">
                               <Select
                                 label="User"
                                 value={editForm.user_id}
@@ -261,7 +438,7 @@ export function AdminLoginHistoryPage() {
                                 ))}
                               </Select>
                               <Input
-                                label="Device"
+                                label="Device Info"
                                 value={editForm.device_info}
                                 onChange={(e) =>
                                   setEditForm((f) => ({
@@ -269,9 +446,10 @@ export function AdminLoginHistoryPage() {
                                     device_info: e.target.value,
                                   }))
                                 }
+                                placeholder="Device information"
                               />
                               <Input
-                                label="IP"
+                                label="IP Address"
                                 value={editForm.ip_address}
                                 onChange={(e) =>
                                   setEditForm((f) => ({
@@ -279,6 +457,7 @@ export function AdminLoginHistoryPage() {
                                     ip_address: e.target.value,
                                   }))
                                 }
+                                placeholder="IP address"
                               />
                             </div>
                             <div className="flex gap-2">
@@ -310,6 +489,17 @@ export function AdminLoginHistoryPage() {
           </table>
         </div>
       </Card>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, id: null })}
+        onConfirm={confirmDelete}
+        title="Delete Login History Record"
+        message="Are you sure you want to delete this login history record? This action cannot be undone."
+        itemName="Login History Record"
+        loading={savingEdit}
+      />
     </div>
   );
 }

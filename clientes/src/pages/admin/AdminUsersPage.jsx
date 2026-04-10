@@ -8,6 +8,7 @@ import { Select } from "@/ui/Select.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
+import { DeleteModal } from "@/components/DeleteModal.jsx";
 import {
   ETHIOPIAN_PHONE_ERROR,
   isValidEthiopianPhone,
@@ -22,6 +23,8 @@ export function AdminUsersPage() {
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
+  const [deleting, setDeleting] = useState(false);
 
   const [full_name, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -107,19 +110,24 @@ export function AdminUsersPage() {
       setError(ETHIOPIAN_PHONE_ERROR);
       return;
     }
-    if (editForm.role_id === "") {
-      setError("Choose a role.");
-      return;
-    }
     setSavingEdit(true);
     try {
       const body = {
         full_name: fn,
         phone: ph,
         email: editForm.email.trim() || null,
-        role_id: Number(editForm.role_id),
-        status: editForm.status,
       };
+      
+      // Only include role_id if it's selected (allows removing admin role)
+      if (editForm.role_id !== "") {
+        body.role_id = Number(editForm.role_id);
+      }
+      
+      // Only include status if it's selected (allows disabling account)
+      if (editForm.status !== "") {
+        body.status = editForm.status;
+      }
+      
       if (editForm.password.trim()) {
         body.password = editForm.password;
       }
@@ -179,18 +187,44 @@ export function AdminUsersPage() {
   }
 
   async function handleRemove(id) {
-    if (!window.confirm("Delete this user?")) return;
+    const user = users.find(u => u.id === id);
+    setDeleteModal({ isOpen: true, id, name: user?.full_name || `User #${id}` });
+  }
+
+  const confirmDelete = async () => {
+    const { id } = deleteModal;
     setError("");
     setNotice("");
+    setDeleting(true);
+    
     if (editingId === id) closeEdit();
+    
     try {
       await adminUsersService.remove(id);
-      setNotice("User removed.");
+      setNotice("User removed successfully.");
+      setDeleteModal({ isOpen: false, id: null, name: "" });
       await refresh();
-    } catch (e) {
-      setError(e?.message || "Delete failed");
+    } catch (err) {
+      console.error("Delete user error:", err);
+      let errorMessage = "Failed to delete user.";
+      
+      if (err.status === 500) {
+        errorMessage = "Server error occurred. The user may have associated data that needs to be removed first.";
+      } else if (err.status === 403) {
+        errorMessage = "You don't have permission to delete this user.";
+      } else if (err.status === 404) {
+        errorMessage = "User not found. It may have already been deleted.";
+      } else if (err.data?.message) {
+        errorMessage = err.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setDeleting(false);
     }
-  }
+  };
 
   if (loading && !users.length && !roles.length) {
     return (
@@ -264,7 +298,7 @@ export function AdminUsersPage() {
             <option value="">Select role…</option>
             {roles.map((r) => (
               <option key={r.id} value={r.id}>
-                {r.name} (role id {r.id})
+                {r.name}
               </option>
             ))}
           </Select>
@@ -400,8 +434,8 @@ export function AdminUsersPage() {
                                     role_id: e.target.value,
                                   }))
                                 }
-                                required
                               >
+                                <option value="">Remove Role</option>
                                 {roles.map((r) => (
                                   <option key={r.id} value={r.id}>
                                     {r.name} ({r.id})
@@ -418,6 +452,7 @@ export function AdminUsersPage() {
                                   }))
                                 }
                               >
+                                <option value="">Remove Status</option>
                                 <option value="active">active</option>
                                 <option value="inactive">inactive</option>
                               </Select>
@@ -466,6 +501,17 @@ export function AdminUsersPage() {
           </table>
         </div>
       </Card>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => !deleting && setDeleteModal({ isOpen: false, id: null, name: "" })}
+        onConfirm={confirmDelete}
+        title="Delete User"
+        message={`Are you sure you want to delete the user "${deleteModal.name}"? This action cannot be undone and will permanently remove all user data.`}
+        itemName={`User "${deleteModal.name}"`}
+        loading={deleting}
+      />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { cargoReceiptsService } from "@/services/cargoReceipts.service.js";
+import { adminUsersService } from "@/services/adminUsers.service.js";
 import { cargoService } from "@/services/cargo.service.js";
 import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
@@ -8,6 +9,7 @@ import { Select } from "@/ui/Select.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon, DownloadIcon } from "@/ui/icons.jsx";
+import { DeleteModal } from "@/components/DeleteModal.jsx";
 import { formatDate, formatMoney } from "@/utils/format.js";
 import { downloadCargoReceiptHtml } from "@/utils/cargoReceiptDocument.js";
 
@@ -18,7 +20,7 @@ function DetailRow({ r }) {
         <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
           Receipt
         </p>
-        <p className="text-slate-200">#{r.id}</p>
+        <p className="text-slate-200">{r.id}</p>
       </div>
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
@@ -107,19 +109,19 @@ const SORT_OPTIONS = [
 
 export function AdminCargoReceiptsPage() {
   const [receipts, setReceipts] = useState([]);
-  const [cargoList, setCargoList] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [cargo, setCargo] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
+  const [deleting, setDeleting] = useState(false);
   const [detailId, setDetailId] = useState(null);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState("issued_at");
   const [sortDir, setSortDir] = useState("desc");
-
-  const [cCargo, setCCargo] = useState("");
-  const [cAmount, setCAmount] = useState("");
 
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ cargo_id: "", amount: "" });
@@ -133,7 +135,7 @@ export function AdminCargoReceiptsPage() {
         cargoService.list(),
       ]);
       setReceipts(Array.isArray(r) ? r : []);
-      setCargoList(Array.isArray(c) ? c : []);
+      setCargo(Array.isArray(c) ? c : []);
     } catch (e) {
       setError(e?.message || "Failed to load");
     } finally {
@@ -146,7 +148,7 @@ export function AdminCargoReceiptsPage() {
   }, [refresh]);
 
   const cargoOptions = useMemo(() => {
-    return cargoList.map((c) => {
+    return cargo.map((c) => {
       const tracking = String(c?.tracking_code ?? "").trim();
       const content = String(c?.content ?? "").trim();
       const owner = String(c?.owner_name ?? "").trim();
@@ -158,29 +160,30 @@ export function AdminCargoReceiptsPage() {
         label: `#${c.id} · ${primary}${ownerInfo}`,
       };
     });
-  }, [cargoList]);
+  }, [cargo]);
 
   const filteredSorted = useMemo(() => {
     let rows = [...receipts];
     const q = search.trim().toLowerCase();
     if (q) {
       rows = rows.filter((r) => {
+        if (!r) return false;
         const parts = [
-          r.id,
-          r.cargo_id,
-          r.amount,
-          r.issued_at,
-          r.tracking_code,
-          r.owner_name,
-          r.owner_phone,
-          r.route_summary,
-          r.vehicle_plate,
-          r.cargo_status,
-          r.cargo_content_brief,
-          r.brief_description,
-          r.trip_departure,
-          r.cargo_weight_kg,
-          r.cargo_fee,
+          r?.id,
+          r?.cargo_id,
+          r?.amount,
+          r?.issued_at,
+          r?.tracking_code,
+          r?.owner_name,
+          r?.owner_phone,
+          r?.route_summary,
+          r?.vehicle_plate,
+          r?.cargo_status,
+          r?.cargo_content_brief,
+          r?.brief_description,
+          r?.trip_departure,
+          r?.cargo_weight_kg,
+          r?.cargo_fee,
         ]
           .filter((x) => x != null && x !== "")
           .map((x) => String(x).toLowerCase());
@@ -190,20 +193,34 @@ export function AdminCargoReceiptsPage() {
     const dir = sortDir === "asc" ? 1 : -1;
     const key = sortKey;
     rows.sort((a, b) => {
-      let va = a[key];
-      let vb = b[key];
-      if (key === "issued_at") {
-        va = va ? new Date(va).getTime() : 0;
-        vb = vb ? new Date(vb).getTime() : 0;
-      } else if (["id", "cargo_id", "amount"].includes(key)) {
-        va = Number(va);
-        vb = Number(vb);
-        if (!Number.isFinite(va)) va = 0;
-        if (!Number.isFinite(vb)) vb = 0;
+      if (!a || !b) return 0;
+      if (!sortKey) return 0;
+      let va = a?.[sortKey];
+      let vb = b?.[sortKey];
+      
+      if (sortKey === "issued_at") {
+        try {
+          va = va ? new Date(va).getTime() : 0;
+          vb = vb ? new Date(vb).getTime() : 0;
+        } catch (dateError) {
+          console.warn("Date parsing error:", dateError);
+          va = 0;
+          vb = 0;
+        }
+      } else if (["id", "cargo_id", "amount"].includes(sortKey)) {
+        va = Number(va) || 0;
+        vb = Number(vb) || 0;
       } else {
         va = String(va ?? "").toLowerCase();
         vb = String(vb ?? "").toLowerCase();
       }
+      
+      // Additional safety check for comparison
+      if (typeof va !== typeof vb) {
+        va = String(va).toLowerCase();
+        vb = String(vb).toLowerCase();
+      }
+      
       if (va < vb) return -1 * dir;
       if (va > vb) return 1 * dir;
       return 0;
@@ -229,28 +246,6 @@ export function AdminCargoReceiptsPage() {
   function toggleDetail(id) {
     setDetailId((cur) => (cur === id ? null : id));
     if (editingId === id) closeEdit();
-  }
-
-  async function handleCreate(e) {
-    e.preventDefault();
-    setNotice("");
-    setError("");
-    setSubmitting(true);
-    try {
-      const body = {};
-      if (cCargo) body.cargo_id = Number(cCargo);
-      if (cAmount !== "" && !Number.isNaN(Number(cAmount)))
-        body.amount = Number(cAmount);
-      await cargoReceiptsService.create(body);
-      setNotice("Receipt created.");
-      setCCargo("");
-      setCAmount("");
-      await refresh();
-    } catch (e) {
-      setError(e?.data?.message || e?.message || "Create failed");
-    } finally {
-      setSubmitting(false);
-    }
   }
 
   async function handleUpdate(e) {
@@ -279,19 +274,44 @@ export function AdminCargoReceiptsPage() {
   }
 
   async function handleRemove(id) {
-    if (!window.confirm("Delete this receipt?")) return;
+    const receipt = receipts.find(r => r.id === id);
+    setDeleteModal({ isOpen: true, id, name: `Receipt #${id}` });
+  }
+
+  const confirmDelete = async () => {
+    const { id } = deleteModal;
     setError("");
     setNotice("");
+    setDeleting(true);
+    
     if (editingId === id) closeEdit();
-    if (detailId === id) setDetailId(null);
+    
     try {
       await cargoReceiptsService.remove(id);
-      setNotice("Receipt deleted.");
+      setNotice("Cargo receipt deleted successfully.");
+      setDeleteModal({ isOpen: false, id: null, name: "" });
       await refresh();
-    } catch (e) {
-      setError(e?.message || "Delete failed");
+    } catch (err) {
+      console.error("Delete cargo receipt error:", err);
+      let errorMessage = "Failed to delete cargo receipt.";
+      
+      if (err.status === 500) {
+        errorMessage = "Server error occurred. The cargo receipt may have associated payments.";
+      } else if (err.status === 403) {
+        errorMessage = "You don't have permission to delete this cargo receipt.";
+      } else if (err.status === 404) {
+        errorMessage = "Cargo receipt not found. It may have already been deleted.";
+      } else if (err.data?.message) {
+        errorMessage = err.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setDeleting(false);
     }
-  }
+  };
 
   const colCount = 8;
 
@@ -316,40 +336,7 @@ export function AdminCargoReceiptsPage() {
         </p>
       ) : null}
 
-      <Card title="Create cargo receipt">
-        <form
-          onSubmit={handleCreate}
-          className="grid gap-4 sm:grid-cols-3"
-        >
-          <Select
-            label="Cargo (optional)"
-            value={cCargo}
-            onChange={(e) => setCCargo(e.target.value)}
-          >
-            <option value="">—</option>
-            {cargoOptions.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </Select>
-          <Input
-            label="Amount paid (optional)"
-            type="number"
-            step="0.01"
-            min="0"
-            value={cAmount}
-            onChange={(e) => setCAmount(e.target.value)}
-          />
-          <div className="flex items-end">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Creating…" : "Create receipt"}
-            </Button>
-          </div>
-        </form>
-      </Card>
-
-      <Card title="All receipts">
+      <Card title="Cargo Receipts">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
           <div className="min-w-[200px] flex-1">
             <Input
@@ -551,6 +538,17 @@ export function AdminCargoReceiptsPage() {
           </table>
         </div>
       </Card>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => !deleting && setDeleteModal({ isOpen: false, id: null, name: "" })}
+        onConfirm={confirmDelete}
+        title="Delete Cargo Receipt"
+        message={`Are you sure you want to delete ${deleteModal.name}? This action cannot be undone and may affect associated payments.`}
+        itemName={deleteModal.name}
+        loading={deleting}
+      />
     </div>
   );
 }

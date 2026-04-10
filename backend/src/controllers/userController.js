@@ -3,12 +3,14 @@ import { queryAsync } from "../config/db.js";
 import {
   createUserAsync,
   getAllUsersAsync,
+  getPassengerUsersAsync,
   getUserByIdAsync,
   updateUserAsync,
   deleteUserAsync,
 } from "../models/userModel.js";
 import { sendSuccess, sendError } from "../utils/apiResponse.js";
 import { isAdmin } from "../constants/roles.js";
+import { logAutoReportTask } from "../utils/reportActivity.js";
 
 export const create = async (req, res) => {
   try {
@@ -28,6 +30,11 @@ export const create = async (req, res) => {
       Number(role_id),
       status ?? "active"
     );
+    void logAutoReportTask({
+      type: "user_created",
+      summary: `Admin created user #${result.insertId}: ${full_name} (${phone})`,
+      date_range: `user_id:${result.insertId}`,
+    });
     return sendSuccess(res, { message: "User created", id: result.insertId }, 201);
   } catch (err) {
     return sendError(res, "Failed to create user", 500, err);
@@ -43,6 +50,19 @@ export const getAll = async (req, res) => {
     return sendSuccess(res, rows);
   } catch (err) {
     return sendError(res, "Failed to list users", 500, err);
+  }
+};
+
+/** Ticket forms: only passenger-role accounts (not admin/driver). */
+export const listPassengers = async (req, res) => {
+  try {
+    if (!isAdmin(req.roleName)) {
+      return sendError(res, "Admin access required", 403);
+    }
+    const rows = await getPassengerUsersAsync();
+    return sendSuccess(res, rows);
+  } catch (err) {
+    return sendError(res, "Failed to list passengers", 500, err);
   }
 };
 
@@ -105,8 +125,10 @@ export const update = async (req, res) => {
 
 export const remove = async (req, res) => {
   try {
-    if (!isAdmin(req.roleName)) {
-      return sendError(res, "Admin access required", 403);
+    const id = Number(req.params.id);
+    const isSelf = id === Number(req.user.id);
+    if (!isAdmin(req.roleName) && !isSelf) {
+      return sendError(res, "Forbidden", 403);
     }
     await deleteUserAsync(req.params.id);
     return sendSuccess(res, { message: "User deleted" });

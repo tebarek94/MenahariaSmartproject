@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useAsync } from "@/hooks/useAsync.js";
 import { ticketsService } from "@/services/tickets.service.js";
 import { tripsService } from "@/services/trips.service.js";
@@ -12,7 +12,8 @@ import { Select } from "@/ui/Select.jsx";
 import { DataTable } from "@/ui/DataTable.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
-import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
+import { PencilIcon, CheckIcon, TrashIcon, XIcon, DownloadIcon } from "@/ui/icons.jsx";
+import { DeleteModal } from "@/components/DeleteModal.jsx";
 import { formatDate } from "@/utils/format.js";
 
 const TICKET_STATUSES = [
@@ -28,7 +29,7 @@ export function AdminTicketsPage() {
   const relationsView = useAsync(() => viewsService.ticketsRelations(100));
 
   const [tickets, setTickets] = useState([]);
-  const [users, setUsers] = useState([]);
+  const [passengers, setPassengers] = useState([]);
   const [trips, setTrips] = useState([]);
   const [seatOptions, setSeatOptions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,11 +37,13 @@ export function AdminTicketsPage() {
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
+  const [deleting, setDeleting] = useState(false);
+  const [generatingDownload, setGeneratingDownload] = useState(null);
 
   const [cUserId, setCUserId] = useState("");
   const [cTripId, setCTripId] = useState("");
   const [cSeatId, setCSeatId] = useState("");
-  const [cCode, setCCode] = useState("");
   const [cStatus, setCStatus] = useState("reserved");
   const [cPayment, setCPayment] = useState("pending");
 
@@ -60,11 +63,11 @@ export function AdminTicketsPage() {
     try {
       const [t, u, tr] = await Promise.all([
         ticketsService.list(),
-        adminUsersService.list(),
+        adminUsersService.listPassengers(),
         tripsService.list(),
       ]);
       setTickets(Array.isArray(t) ? t : []);
-      setUsers(Array.isArray(u) ? u : []);
+      setPassengers(Array.isArray(u) ? u : []);
       setTrips(Array.isArray(tr) ? tr : []);
     } catch (e) {
       setError(e?.message || "Failed to load tickets");
@@ -85,7 +88,7 @@ export function AdminTicketsPage() {
   const activeTripId = editingId != null ? editForm.trip_id : cTripId;
 
   const loadSeatsForTrip = useCallback(
-    async (tripId) => {
+    async (tripId, includeSeatId) => {
       if (!tripId || !trips.length) {
         setSeatOptions([]);
         return;
@@ -96,8 +99,23 @@ export function AdminTicketsPage() {
         return;
       }
       try {
-        const rows = await seatsService.byVehicle(trip.vehicle_id);
-        setSeatOptions(Array.isArray(rows) ? rows : []);
+        const rows = await seatsService.availableByVehicle(
+          trip.vehicle_id,
+          Number(tripId)
+        );
+        let list = Array.isArray(rows) ? rows : [];
+        const sid = includeSeatId ? Number(includeSeatId) : NaN;
+        if (Number.isInteger(sid) && sid > 0 && !list.some((s) => Number(s.id) === sid)) {
+          try {
+            const one = await seatsService.get(sid);
+            if (one && Number(one.vehicle_id) === Number(trip.vehicle_id)) {
+              list = [one, ...list];
+            }
+          } catch {
+            /* keep list */
+          }
+        }
+        setSeatOptions(list);
       } catch {
         setSeatOptions([]);
       }
@@ -106,29 +124,10 @@ export function AdminTicketsPage() {
   );
 
   useEffect(() => {
-    loadSeatsForTrip(activeTripId);
-  }, [activeTripId, loadSeatsForTrip]);
-
-  const passengerOptions = useMemo(() => {
-    const activeUsers = users.filter(
-      (u) => String(u?.status ?? "active").toLowerCase() !== "inactive"
-    );
-    const passengers = activeUsers.filter((u) => Number(u?.role_id) === 3);
-    // If role ids are not seeded as expected, fallback to active users.
-    return passengers.length ? passengers : activeUsers;
-  }, [users]);
-
-  const userNameById = useMemo(() => {
-    const map = new Map();
-    users.forEach((u) => {
-      const label =
-        String(u?.full_name ?? "").trim() ||
-        String(u?.phone ?? "").trim() ||
-        `User #${u.id}`;
-      map.set(String(u.id), label);
-    });
-    return map;
-  }, [users]);
+    const includeSeatId =
+      editingId != null && editForm.seat_id ? editForm.seat_id : null;
+    loadSeatsForTrip(activeTripId, includeSeatId);
+  }, [activeTripId, editingId, editForm.seat_id, loadSeatsForTrip]);
 
   function openEdit(t) {
     setEditingId(t.id);
@@ -172,11 +171,8 @@ export function AdminTicketsPage() {
         status: cStatus,
         payment_status: cPayment,
       };
-      const code = cCode.trim();
-      if (code) body.ticket_code = code;
       await ticketsService.create(body);
-      setNotice("Ticket created.");
-      setCCode("");
+      setNotice("Ticket created with automatic code.");
       setCSeatId("");
       await refreshCore();
       relationsView.run().catch(() => {});
@@ -230,19 +226,74 @@ export function AdminTicketsPage() {
   }
 
   async function handleRemove(id) {
-    if (!window.confirm("Delete this ticket?")) return;
+    setDeleteModal({ isOpen: true, id, name: `Ticket #${id}` });
+  }
+
+  const confirmDelete = async () => {
+    const { id } = deleteModal;
     setError("");
     setNotice("");
+    setDeleting(true);
+    
     if (editingId === id) closeEdit();
+    
     try {
       await ticketsService.remove(id);
-      setNotice("Ticket deleted.");
+      setNotice("Ticket deleted successfully.");
+      setDeleteModal({ isOpen: false, id: null, name: "" });
       await refreshCore();
-      relationsView.run().catch(() => {});
-    } catch (e) {
-      setError(e?.message || "Delete failed");
+    } catch (err) {
+      console.error("Delete ticket error:", err);
+      let errorMessage = "Failed to delete ticket.";
+      
+      if (err.status === 500) {
+        errorMessage = "Server error occurred. The ticket may have associated payments.";
+      } else if (err.status === 403) {
+        errorMessage = "You don't have permission to delete this ticket.";
+      } else if (err.status === 404) {
+        errorMessage = "Ticket not found. It may have already been deleted.";
+      } else if (err.data?.message) {
+        errorMessage = err.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setDeleting(false);
     }
-  }
+  };
+
+  const handleDownloadTicket = async (ticketId) => {
+    setGeneratingDownload(ticketId);
+    setError("");
+    setNotice("");
+    
+    try {
+      const tokenResponse = await ticketsService.generateDownloadToken(ticketId);
+      const downloadToken = tokenResponse.download_token;
+      
+      if (!downloadToken) {
+        setError("Failed to generate download token.");
+        return;
+      }
+
+      const link = document.createElement("a");
+      link.href = ticketsService.getDownloadUrl(downloadToken);
+      link.download = `ticket_${ticketId}.html`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setNotice("Ticket download started.");
+      await refreshCore();
+    } catch (err) {
+      console.error("Download ticket error:", err);
+      setError(err?.data?.message || "Failed to download ticket.");
+    } finally {
+      setGeneratingDownload(null);
+    }
+  };
 
   if (loading && !tickets.length && !trips.length) {
     return (
@@ -265,7 +316,10 @@ export function AdminTicketsPage() {
         </p>
       ) : null}
 
-      <Card title="Create ticket" subtitle="Passenger + trip + seat on that vehicle">
+      <Card
+        title="Create ticket"
+        subtitle="Passenger accounts only (admin/driver are excluded) · trip · seat on that vehicle"
+      >
         <form
           onSubmit={handleCreate}
           className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
@@ -277,7 +331,7 @@ export function AdminTicketsPage() {
             required
           >
             <option value="">Select passenger…</option>
-            {passengerOptions.map((u) => (
+            {passengers.map((u) => (
               <option key={u.id} value={u.id}>
                 {(String(u?.full_name ?? "").trim() || "Unnamed user")} ·{" "}
                 {u.phone || "no phone"} (#{u.id})
@@ -320,13 +374,7 @@ export function AdminTicketsPage() {
               </option>
             ))}
           </Select>
-          <Input
-            label="Ticket code (optional)"
-            value={cCode}
-            onChange={(e) => setCCode(e.target.value)}
-            placeholder="Auto if omitted"
-          />
-          <Select
+                    <Select
             label="Status"
             value={cStatus}
             onChange={(e) => setCStatus(e.target.value)}
@@ -348,10 +396,15 @@ export function AdminTicketsPage() {
               </option>
             ))}
           </Select>
-          <div className="flex items-end sm:col-span-2 lg:col-span-1">
-            <Button type="submit" disabled={submitting}>
+          <div className="flex flex-col justify-end gap-1 sm:col-span-2 lg:col-span-1">
+            <Button type="submit" disabled={submitting || passengers.length === 0}>
               {submitting ? "Creating…" : "Create ticket"}
             </Button>
+            {!loading && passengers.length === 0 ? (
+              <p className="text-xs text-amber-400/90">
+                No passenger users found. Add users with a passenger role in Users.
+              </p>
+            ) : null}
           </div>
         </form>
       </Card>
@@ -397,22 +450,20 @@ export function AdminTicketsPage() {
                         {t.id}
                       </td>
                       <td className="max-w-[120px] truncate px-2 py-2 text-slate-200">
-                        {String(t.passenger_name ?? "").trim() ||
-                          userNameById.get(String(t.user_id)) ||
-                          t.user_id}
+                        {t.passenger_name || "Unknown Passenger"}
                       </td>
                       <td className="max-w-[140px] truncate px-2 py-2 text-slate-400">
                         {t.origin && t.destination
-                          ? `${t.origin} → ${t.destination}`
-                          : "—"}
+                          ? `${t.origin} ${t.destination}`
+                          : "No route"}
                       </td>
                       <td className="px-2 py-2 text-slate-400">{t.trip_id}</td>
-                      <td className="px-2 py-2 text-slate-400">{t.seat_id}</td>
+                      <td className="px-2 py-2 text-slate-400">Seat {t.seat_id}</td>
                       <td className="max-w-[80px] truncate px-2 py-2 text-slate-500">
-                        {t.ticket_code ?? "—"}
+                        {t.ticket_code || "Auto-generated"}
                       </td>
-                      <td className="px-2 py-2 text-slate-300">{t.status}</td>
-                      <td className="px-2 py-2 text-slate-300">
+                      <td className="px-2 py-2 text-slate-300 capitalize">{t.status}</td>
+                      <td className="px-2 py-2 text-slate-300 capitalize">
                         {t.payment_status}
                       </td>
                       <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">
@@ -420,16 +471,29 @@ export function AdminTicketsPage() {
                       </td>
                       <td className="px-2 py-2">
                         {t.qr_data_url ? (
-                          <a
-                            href={t.qr_data_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs text-primary-400 hover:underline"
-                          >
-                            Open
-                          </a>
+                          <div className="flex items-center gap-2">
+                            <a
+                              href={t.qr_data_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="block overflow-hidden rounded border border-primary-800/40 bg-white p-1"
+                              title={`Open QR for ticket #${t.id}`}
+                            >
+                              <img
+                                src={t.qr_data_url}
+                                alt={`QR for ticket ${t.id}`}
+                                className="h-12 w-12 object-contain"
+                              />
+                            </a>
+                            {t.qr_code_used && (
+                              <span className="text-xs text-red-400">Used</span>
+                            )}
+                            {t.qr_code_expires_at && new Date(t.qr_code_expires_at) < new Date() && !t.qr_code_used && (
+                              <span className="text-xs text-yellow-400">Expired</span>
+                            )}
+                          </div>
                         ) : (
-                          "—"
+                          <span className="text-xs text-slate-500">No QR</span>
                         )}
                       </td>
                       <td className="px-2 py-2">
@@ -440,6 +504,14 @@ export function AdminTicketsPage() {
                             onClick={() => openEdit(t)}
                           >
                             <PencilIcon />
+                          </IconButton>
+                          <IconButton
+                            variant="primary"
+                            label="Download Ticket"
+                            onClick={() => handleDownloadTicket(t.id)}
+                            disabled={generatingDownload === t.id}
+                          >
+                            <DownloadIcon className={generatingDownload === t.id ? "animate-spin" : ""} />
                           </IconButton>
                           <IconButton
                             variant="danger"
@@ -459,7 +531,7 @@ export function AdminTicketsPage() {
                             className="space-y-4"
                           >
                             <p className="text-xs font-medium text-primary-300">
-                              Edit ticket #{t.id}
+                              Edit ticket {t.id}
                             </p>
                             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                               <Select
@@ -473,7 +545,7 @@ export function AdminTicketsPage() {
                                 }
                                 required
                               >
-                                {passengerOptions.map((u) => (
+                                {passengers.map((u) => (
                                   <option key={u.id} value={u.id}>
                                     {(String(u?.full_name ?? "").trim() ||
                                       "Unnamed user")}{" "}
@@ -495,7 +567,7 @@ export function AdminTicketsPage() {
                               >
                                 {trips.map((tr) => (
                                   <option key={tr.id} value={tr.id}>
-                                    #{tr.id} · v{tr.vehicle_id}
+                                    {tr.id} · v{tr.vehicle_name}
                                   </option>
                                 ))}
                               </Select>
@@ -518,7 +590,7 @@ export function AdminTicketsPage() {
                                 </option>
                                 {seatOptions.map((s) => (
                                   <option key={s.id} value={s.id}>
-                                    #{s.seat_number} (id {s.id})
+                                    {s.seat_number}
                                   </option>
                                 ))}
                               </Select>
@@ -597,11 +669,6 @@ export function AdminTicketsPage() {
           </table>
         </div>
       </Card>
-
-      <Card
-        title="Joined view (read-only)"
-        subtitle="GET /api/views/tickets-relations — same data, wider joins"
-      >
         {relationsView.loading && !relationsView.data ? (
           <div className="flex justify-center py-12">
             <Spinner />
@@ -619,7 +686,17 @@ export function AdminTicketsPage() {
             />
           </>
         )}
-      </Card>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => !deleting && setDeleteModal({ isOpen: false, id: null, name: "" })}
+        onConfirm={confirmDelete}
+        title="Delete Ticket"
+        message={`Are you sure you want to delete ${deleteModal.name}? This action cannot be undone and may affect associated payments.`}
+        itemName={deleteModal.name}
+        loading={deleting}
+      />
     </div>
   );
 }

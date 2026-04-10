@@ -6,6 +6,7 @@ import { Input } from "@/ui/Input.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
+import { DeleteModal } from "@/components/DeleteModal.jsx";
 
 export function AdminRoutesPage() {
   const [rows, setRows] = useState([]);
@@ -14,6 +15,8 @@ export function AdminRoutesPage() {
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
+  const [deleting, setDeleting] = useState(false);
 
   const [cOrigin, setCOrigin] = useState("");
   const [cDest, setCDest] = useState("");
@@ -115,18 +118,44 @@ export function AdminRoutesPage() {
   }
 
   async function handleRemove(id) {
-    if (!window.confirm("Delete this route?")) return;
+    const route = rows.find(r => r.id === id);
+    setDeleteModal({ isOpen: true, id, name: route?.name || `Route #${id}` });
+  }
+
+  const confirmDelete = async () => {
+    const { id } = deleteModal;
     setError("");
     setNotice("");
+    setDeleting(true);
+    
     if (editingId === id) closeEdit();
+    
     try {
       await routesService.remove(id);
-      setNotice("Route deleted.");
+      setNotice("Route deleted successfully.");
+      setDeleteModal({ isOpen: false, id: null, name: "" });
       await refresh();
-    } catch (e) {
-      setError(e?.message || "Delete failed");
+    } catch (err) {
+      console.error("Delete route error:", err);
+      let errorMessage = "Failed to delete route.";
+      
+      if (err.status === 500) {
+        errorMessage = "Server error occurred. The route may be referenced by existing trips or have database constraints. Please delete all associated trips first or contact your database administrator to check foreign key constraints.";
+      } else if (err.status === 403) {
+        errorMessage = "You don't have permission to delete this route.";
+      } else if (err.status === 404) {
+        errorMessage = "Route not found. It may have already been deleted.";
+      } else if (err.data?.message) {
+        errorMessage = err.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setDeleting(false);
     }
-  }
+  };
 
   if (loading && !rows.length) {
     return (
@@ -307,6 +336,17 @@ export function AdminRoutesPage() {
           </table>
         </div>
       </Card>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => !deleting && setDeleteModal({ isOpen: false, id: null, name: "" })}
+        onConfirm={confirmDelete}
+        title="Delete Route"
+        message={`Are you sure you want to delete the route "${deleteModal.name}"? This action cannot be undone and may affect associated trips.`}
+        itemName={`Route "${deleteModal.name}"`}
+        loading={deleting}
+      />
     </div>
   );
 }

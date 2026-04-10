@@ -3,7 +3,10 @@ import { useAsync } from "@/hooks/useAsync.js";
 import { cargoService } from "@/services/cargo.service.js";
 import { adminUsersService } from "@/services/adminUsers.service.js";
 import { tripsService } from "@/services/trips.service.js";
+import { rolesService } from "@/services/roles.service.js";
 import { viewsService } from "@/services/views.service.js";
+import { ConfirmModal } from "@/components/ConfirmModal.jsx";
+import { isDriverRole } from "@/utils/roles.js";
 import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Input } from "@/ui/Input.jsx";
@@ -12,6 +15,7 @@ import { DataTable } from "@/ui/DataTable.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
+import { DeleteModal } from "@/components/DeleteModal.jsx";
 import { formatDate, formatMoney } from "@/utils/format.js";
 
 const CARGO_STATUSES = [
@@ -38,24 +42,23 @@ export function AdminCargoPage() {
   const [cargo, setCargo] = useState([]);
   const [users, setUsers] = useState([]);
   const [trips, setTrips] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [assignTripId, setAssignTripId] = useState("");
+  const [assignDriverFilter, setAssignDriverFilter] = useState("");
+  const [selectedCargoIds, setSelectedCargoIds] = useState([]);
+  const [assignSubmitting, setAssignSubmitting] = useState(false);
+  const [confirmAssignAllOpen, setConfirmAssignAllOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
+  const [deleting, setDeleting] = useState(false);
 
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState("created_at");
   const [sortDir, setSortDir] = useState("desc");
-
-  const [cOwnerId, setCOwnerId] = useState("");
-  const [cTripId, setCTripId] = useState("");
-  const [cWeight, setCWeight] = useState("");
-  const [cContent, setCContent] = useState("");
-  const [cTracking, setCTracking] = useState("");
-  const [cStatus, setCStatus] = useState("pending");
-  const [cFeeOverride, setCFeeOverride] = useState(false);
-  const [cFee, setCFee] = useState("");
 
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -73,14 +76,24 @@ export function AdminCargoPage() {
     setLoading(true);
     setError("");
     try {
-      const [c, u, tr] = await Promise.all([
+      const [c, u, tr, rl] = await Promise.all([
         cargoService.list(),
         adminUsersService.list(),
         tripsService.list(),
+        rolesService.list(),
       ]);
-      setCargo(Array.isArray(c) ? c : []);
-      setUsers(Array.isArray(u) ? u : []);
-      setTrips(Array.isArray(tr) ? tr : []);
+      setCargo(
+        Array.isArray(c) ? c : Array.isArray(c?.data) ? c.data : []
+      );
+      setUsers(
+        Array.isArray(u) ? u : Array.isArray(u?.data) ? u.data : []
+      );
+      setTrips(
+        Array.isArray(tr) ? tr : Array.isArray(tr?.data) ? tr.data : []
+      );
+      setRoles(
+        Array.isArray(rl) ? rl : Array.isArray(rl?.data) ? rl.data : []
+      );
     } catch (e) {
       setError(e?.message || "Failed to load cargo");
     } finally {
@@ -113,6 +126,56 @@ export function AdminCargoPage() {
         : String(tripId ?? "—");
     },
     [trips]
+  );
+
+  const driverRoleIds = useMemo(() => {
+    const set = new Set();
+    for (const r of roles) {
+      if (isDriverRole(r?.name)) set.add(Number(r.id));
+    }
+    return set;
+  }, [roles]);
+
+  const driverUsers = useMemo(
+    () => users.filter((u) => driverRoleIds.has(Number(u.role_id))),
+    [users, driverRoleIds]
+  );
+
+  const tripsForAssign = useMemo(() => {
+    if (!assignDriverFilter) return trips;
+    return trips.filter(
+      (t) => String(t.driver_id ?? "") === assignDriverFilter
+    );
+  }, [trips, assignDriverFilter]);
+
+  /** Clear trip pick if driver filter hides that trip (deps avoid reading tripsForAssign in TDZ). */
+  useEffect(() => {
+    if (!assignTripId) return;
+    const filtered = assignDriverFilter
+      ? trips.filter(
+          (t) => String(t.driver_id ?? "") === assignDriverFilter
+        )
+      : trips;
+    const ok = filtered.some((t) => String(t.id) === assignTripId);
+    if (!ok) setAssignTripId("");
+  }, [assignTripId, assignDriverFilter, trips]);
+
+  const tripOptionLabel = useCallback(
+    (t) => {
+      const driverPart = t.driver_id
+        ? userLabel(t.driver_id)
+        : "No driver yet";
+      return `#${t.id} · ${driverPart} · ${formatDate(t.departure_time)} · v${t.vehicle_id}`;
+    },
+    [userLabel]
+  );
+
+  const pendingCargoCount = useMemo(
+    () =>
+      cargo.filter(
+        (r) => String(r.status ?? "").trim().toLowerCase() === "pending"
+      ).length,
+    [cargo]
   );
 
   const filteredSorted = useMemo(() => {
@@ -164,6 +227,53 @@ export function AdminCargoPage() {
     return rows;
   }, [cargo, search, sortKey, sortDir, userLabel, tripLabel]);
 
+  function toggleCargoSelect(id) {
+    setSelectedCargoIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  function toggleSelectAllVisible() {
+    const ids = filteredSorted.map((r) => r.id);
+    setSelectedCargoIds((prev) => {
+      const allSelected = ids.length && ids.every((i) => prev.includes(i));
+      if (allSelected) {
+        return prev.filter((i) => !ids.includes(i));
+      }
+      return [...new Set([...prev, ...ids])];
+    });
+  }
+
+  async function runBulkAssign(scope, extra = {}) {
+    setNotice("");
+    setError("");
+    const tid = Number(assignTripId);
+    if (!Number.isFinite(tid) || tid <= 0) {
+      setError("Choose a trip (driver’s run) to assign cargo to.");
+      return;
+    }
+    setAssignSubmitting(true);
+    try {
+      const body = { trip_id: tid, scope, ...extra };
+      const res = await cargoService.bulkAssignTrip(body);
+      const n = res?.affectedRows ?? 0;
+      setNotice(res?.message || `Updated ${n} cargo row(s).`);
+      setSelectedCargoIds([]);
+      await refreshCore();
+      relationsView.run().catch(() => {});
+    } catch (e) {
+      setError(
+        e?.data?.sqlMessage ||
+          e?.data?.message ||
+          e?.message ||
+          "Bulk assign failed"
+      );
+    } finally {
+      setAssignSubmitting(false);
+      setConfirmAssignAllOpen(false);
+    }
+  }
+
   function openEdit(row) {
     setEditingId(row.id);
     setEditForm({
@@ -191,58 +301,6 @@ export function AdminCargoPage() {
       fee_override: false,
       fee: "",
     });
-  }
-
-  async function handleCreate(e) {
-    e.preventDefault();
-    setNotice("");
-    setError("");
-    if (!cOwnerId || !cTripId || cWeight === "") {
-      setError("Owner, trip, and weight are required.");
-      return;
-    }
-    const w = Number(cWeight);
-    if (!Number.isFinite(w) || w <= 0) {
-      setError("Weight must be a positive number.");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const body = {
-        owner_id: Number(cOwnerId),
-        trip_id: Number(cTripId),
-        weight: w,
-        status: cStatus,
-      };
-      const ct = cContent.trim();
-      if (ct) body.content = ct;
-      const tr = cTracking.trim();
-      if (tr) body.tracking_code = tr;
-      if (cFeeOverride) {
-        body.fee_override = true;
-        body.fee = Number(cFee);
-        if (!Number.isFinite(body.fee) || body.fee < 0) {
-          setError("Override fee must be a non-negative number.");
-          setSubmitting(false);
-          return;
-        }
-      }
-      await cargoService.create(body);
-      setNotice("Cargo created.");
-      setCWeight("");
-      setCContent("");
-      setCTracking("");
-      setCFeeOverride(false);
-      setCFee("");
-      await refreshCore();
-      relationsView.run().catch(() => {});
-    } catch (e) {
-      setError(
-        e?.data?.sqlMessage || e?.data?.message || e?.message || "Create failed"
-      );
-    } finally {
-      setSubmitting(false);
-    }
   }
 
   async function handleUpdate(e) {
@@ -303,19 +361,44 @@ export function AdminCargoPage() {
   }
 
   async function handleRemove(id) {
-    if (!window.confirm("Delete this cargo record?")) return;
+    const cargoItem = cargo.find((c) => c.id === id);
+    setDeleteModal({ isOpen: true, id, name: `Cargo #${id}` });
+  }
+
+  const confirmDelete = async () => {
+    const { id } = deleteModal;
     setError("");
     setNotice("");
+    setDeleting(true);
+
     if (editingId === id) closeEdit();
+
     try {
       await cargoService.remove(id);
-      setNotice("Cargo deleted.");
+      setNotice("Cargo record deleted successfully.");
+      setDeleteModal({ isOpen: false, id: null, name: "" });
       await refreshCore();
-      relationsView.run().catch(() => {});
-    } catch (e) {
-      setError(e?.message || "Delete failed");
+    } catch (err) {
+      console.error("Delete cargo error:", err);
+      let errorMessage = "Failed to delete cargo record.";
+
+      if (err.status === 500) {
+        errorMessage = "Server error occurred. The cargo record may have associated receipts.";
+      } else if (err.status === 403) {
+        errorMessage = "You don't have permission to delete this cargo record.";
+      } else if (err.status === 404) {
+        errorMessage = "Cargo record not found. It may have already been deleted.";
+      } else if (err.data?.message) {
+        errorMessage = err.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      setError(errorMessage);
+    } finally {
+      setDeleting(false);
     }
-  }
+  };
 
   if (loading && !cargo.length && !trips.length) {
     return (
@@ -340,104 +423,79 @@ export function AdminCargoPage() {
       ) : null}
 
       <Card
-        title="Create cargo"
-        subtitle="Owner, trip, weight — optional content, tracking, fee override"
+        title="Assign cargo to a driver’s trip"
+        subtitle="Cargo is tied to a trip; the trip’s driver sees it on their Cargo page. Use filters to pick a driver, then a trip."
       >
-        <form
-          onSubmit={handleCreate}
-          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-        >
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Select
-            label="Owner (user)"
-            value={cOwnerId}
-            onChange={(e) => setCOwnerId(e.target.value)}
-            required
+            label="Filter trips by driver"
+            value={assignDriverFilter}
+            onChange={(e) => {
+              setAssignDriverFilter(e.target.value);
+            }}
+            className="min-w-0"
           >
-            <option value="">Select user…</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.full_name} · {u.phone}
+            <option value="">All trips</option>
+            {driverUsers.map((d) => (
+              <option key={d.id} value={String(d.id)}>
+                {d.full_name} (#{d.id})
               </option>
             ))}
           </Select>
           <Select
-            label="Trip"
-            value={cTripId}
-            onChange={(e) => setCTripId(e.target.value)}
-            required
+            label="Trip to assign"
+            value={assignTripId}
+            onChange={(e) => setAssignTripId(e.target.value)}
+            className="min-w-0 lg:col-span-2"
           >
             <option value="">Select trip…</option>
-            {trips.map((t) => (
-              <option key={t.id} value={t.id}>
-                #{t.id} · vehicle {t.vehicle_id}
-                {formatDate(t.departure_time)}
+            {tripsForAssign.map((t) => (
+              <option key={t.id} value={String(t.id)}>
+                {tripOptionLabel(t)}
               </option>
             ))}
           </Select>
-          <Input
-            label="Weight (kg)"
-            type="number"
-            inputMode="decimal"
-            step="0.01"
-            min="0.01"
-            value={cWeight}
-            onChange={(e) => setCWeight(e.target.value)}
-            required
-          />
-          <Input
-            label="Content (optional)"
-            value={cContent}
-            onChange={(e) => setCContent(e.target.value)}
-            placeholder="Brief description"
-          />
-          <Input
-            label="Tracking code (optional)"
-            value={cTracking}
-            onChange={(e) => setCTracking(e.target.value)}
-          />
-          <Select
-            label="Status"
-            value={cStatus}
-            onChange={(e) => setCStatus(e.target.value)}
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          {pendingCargoCount} pending · {selectedCargoIds.length} selected in
+          table
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="primary"
+            disabled={
+              assignSubmitting ||
+              !assignTripId ||
+              selectedCargoIds.length === 0
+            }
+            onClick={() =>
+              runBulkAssign("ids", { cargo_ids: selectedCargoIds })
+            }
           >
-            {CARGO_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </Select>
-          <div className="flex flex-col gap-2 sm:col-span-2 lg:col-span-1">
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
-              <input
-                type="checkbox"
-                checked={cFeeOverride}
-                onChange={(e) => setCFeeOverride(e.target.checked)}
-                className="rounded border-slate-600"
-              />
-              Override fee (admin)
-            </label>
-            {cFeeOverride ? (
-              <Input
-                label="Custom fee (ETB)"
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                min="0"
-                value={cFee}
-                onChange={(e) => setCFee(e.target.value)}
-                required={cFeeOverride}
-              />
-            ) : null}
-          </div>
-          <div className="flex items-end sm:col-span-2 lg:col-span-3">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Creating…" : "Create cargo"}
-            </Button>
-          </div>
-        </form>
+            Assign selected
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={assignSubmitting || !assignTripId || pendingCargoCount === 0}
+            onClick={() => runBulkAssign("pending")}
+          >
+            Assign all pending ({pendingCargoCount})
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="!text-red-300"
+            disabled={assignSubmitting || !assignTripId || cargo.length === 0}
+            onClick={() => setConfirmAssignAllOpen(true)}
+          >
+            Assign every cargo row…
+          </Button>
+        </div>
       </Card>
 
-      <Card title="All cargo">
+      <Card title="Cargo">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
           <div className="min-w-[200px] flex-1">
             <Input
@@ -479,6 +537,20 @@ export function AdminCargoPage() {
           <table className="w-full min-w-[960px] border-collapse text-left text-sm">
             <thead className="sticky top-0 bg-slate-900/95 text-xs uppercase text-primary-400/90">
               <tr className="border-b border-primary-900/40">
+                <th className="w-10 px-1 py-2 font-semibold">
+                  <input
+                    type="checkbox"
+                    className="rounded border-slate-600"
+                    title="Select visible rows"
+                    checked={
+                      filteredSorted.length > 0 &&
+                      filteredSorted.every((r) =>
+                        selectedCargoIds.includes(r.id)
+                      )
+                    }
+                    onChange={toggleSelectAllVisible}
+                  />
+                </th>
                 <th className="px-2 py-2 font-semibold">Id</th>
                 <th className="px-2 py-2 font-semibold">Owner</th>
                 <th className="px-2 py-2 font-semibold">Trip</th>
@@ -495,7 +567,7 @@ export function AdminCargoPage() {
               {filteredSorted.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="px-3 py-8 text-center text-slate-500"
                   >
                     {cargo.length === 0
@@ -507,6 +579,15 @@ export function AdminCargoPage() {
                 filteredSorted.map((row) => (
                   <Fragment key={row.id}>
                     <tr className="bg-slate-950/30 hover:bg-slate-800/30">
+                      <td className="px-1 py-2 align-middle">
+                        <input
+                          type="checkbox"
+                          className="rounded border-slate-600"
+                          checked={selectedCargoIds.includes(row.id)}
+                          onChange={() => toggleCargoSelect(row.id)}
+                          aria-label={`Select cargo ${row.id}`}
+                        />
+                      </td>
                       <td className="px-2 py-2 font-mono text-xs text-slate-400">
                         {row.id}
                       </td>
@@ -551,7 +632,7 @@ export function AdminCargoPage() {
                     </tr>
                     {editingId === row.id ? (
                       <tr className="bg-primary-950/20">
-                        <td colSpan={10} className="p-4">
+                        <td colSpan={11} className="p-4">
                           <form
                             onSubmit={handleUpdate}
                             className="space-y-4"
@@ -590,7 +671,7 @@ export function AdminCargoPage() {
                               >
                                 {trips.map((t) => (
                                   <option key={t.id} value={t.id}>
-                                    #{t.id} · v{t.vehicle_id}
+                                    {tripOptionLabel(t)}
                                   </option>
                                 ))}
                               </Select>
@@ -734,6 +815,30 @@ export function AdminCargoPage() {
           </>
         )}
       </Card>
+
+      <ConfirmModal
+        isOpen={confirmAssignAllOpen}
+        onClose={() => !assignSubmitting && setConfirmAssignAllOpen(false)}
+        onConfirm={() =>
+          runBulkAssign("all", { confirm: "ASSIGN_ALL" })
+        }
+        title="Assign all cargo to this trip?"
+        message={`Every cargo record (${cargo.length} rows) will point to the selected trip. Drivers only see cargo on trips they are assigned to. This is meant for bulk reassignment — use with care.`}
+        confirmText="Assign all"
+        type="danger"
+        loading={assignSubmitting}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <DeleteModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => !deleting && setDeleteModal({ isOpen: false, id: null, name: "" })}
+        onConfirm={confirmDelete}
+        title="Delete Cargo Record"
+        message={`Are you sure you want to delete ${deleteModal.name}? This action cannot be undone and may affect associated receipts.`}
+        itemName={deleteModal.name}
+        loading={deleting}
+      />
     </div>
   );
 }

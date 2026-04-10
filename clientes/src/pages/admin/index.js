@@ -14,3 +14,4 @@ export { AdminLoginHistoryPage } from "./AdminLoginHistoryPage.jsx";
 export { AdminNotificationsPage } from "./AdminNotificationsPage.jsx";
 export { AdminReportsPage } from "./AdminReportsPage.jsx";
 export { AdminRelationsOverviewPage } from "./AdminRelationsOverviewPage.jsx";
+export { AdminProfilePage } from "./AdminProfilePage.jsx";

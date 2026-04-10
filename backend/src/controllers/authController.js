@@ -2,8 +2,10 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import userModel from "../models/userModel.js";
 import { getRoleById } from "../models/roleModel.js";
+import * as loginHistoryModel from "../models/loginHistoryModel.js";
 import { queryAsync } from "../config/db.js";
 import { normalizeRoleName } from "../constants/roles.js";
+import { logAutoReportTask } from "../utils/reportActivity.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -34,6 +36,11 @@ export const register = async (req, res) => {
     userModel.createUser(data, (err, result) => {
       if (err) return res.status(500).json(err);
 
+      void logAutoReportTask({
+        type: "user_register",
+        summary: `Self-registration: ${full_name} (${phone})`,
+        date_range: result?.insertId ? `user_id:${result.insertId}` : null,
+      });
       res.json({ message: "User registered successfully" });
     });
   } catch (err) {
@@ -78,6 +85,18 @@ export const login = async (req, res) => {
       jwtSecret,
       { expiresIn: JWT_EXPIRES_IN }
     );
+
+    try {
+      const ip =
+        req.ip ||
+        req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+        req.socket?.remoteAddress ||
+        null;
+      const device = String(req.get("User-Agent") || "").slice(0, 500) || null;
+      await loginHistoryModel.createLoginHistory(user.id, device, ip);
+    } catch (logErr) {
+      console.error("login_history:", logErr);
+    }
 
     res.json({
       message: "Login successful",

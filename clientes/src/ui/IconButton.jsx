@@ -3,6 +3,8 @@ import { cn } from "@/utils/cn.js";
 const variants = {
   ghost: "ui-iconbtn-ghost",
   primary: "ui-iconbtn-primary",
+  secondary: "ui-iconbtn-primary",
+  success: "ui-iconbtn-primary",
   danger: "ui-iconbtn-danger",
 };
 
