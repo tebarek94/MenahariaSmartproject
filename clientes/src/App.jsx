@@ -4,7 +4,7 @@ import { AdminLayout } from "@/components/admin/AdminLayout.jsx";
 import { DriverLayout } from "@/components/driver/DriverLayout.jsx";
 import { RequireAdmin } from "@/components/RequireAdmin.jsx";
 import { RequireDriver } from "@/components/RequireDriver.jsx";
-import { RequirePassenger } from "@/components/RequirePassenger.jsx";
+import { RequirePassenger } from "@/components/passenger/RequirePassenger.jsx";
 import { PublicShell } from "@/components/PublicShell.jsx";
 import { PassengerLayout } from "@/components/passenger/PassengerLayout.jsx";
 import {
@@ -26,6 +26,8 @@ import {
   PassengerBookPage,
   PassengerProfilePage,
   PassengerCargoTrackPage,
+  PassengerRefundRequestsPage,
+  PassengerSupportChatPage,
   NotFoundPage,
   QRScanPage,
   AdminUsersPage,
@@ -33,6 +35,7 @@ import {
   AdminPermissionsPage,
   AdminRolePermissionsPage,
   AdminTicketsPage,
+  AdminRefundRequestsPage,
   AdminVehiclesPage,
   AdminRoutesPage,
   AdminTripsPage,
@@ -42,28 +45,32 @@ import {
   AdminCargoReceiptsPage,
   AdminLoginHistoryPage,
   AdminNotificationsPage,
+  AdminSupportChatPage,
   AdminReportsPage,
   AdminRelationsOverviewPage,
   AdminProfilePage,
 } from "@/pages/index.js";
 import { ROUTES } from "@/utils/constants.js";
 import { ThemeProvider } from "@/contexts/ThemeContext.jsx";
+import { RealtimeBridge } from "@/components/RealtimeBridge.jsx";
 
 export default function App() {
   const auth = useAuth();
 
   return (
     <ThemeProvider>
+      <RealtimeBridge />
       <Routes>
         {/* Universal Login Route */}
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<PassengerRegisterPage />} />
 
         {/* QR Scan Page - Public route for scanning */}
         <Route path="/qr-scan/:token" element={<QRScanPage />} />
+        <Route path="/qr-scan" element={<QRScanPage />} />
 
         <Route path="/" element={<PublicShell />}>
           <Route index element={<PassengerLandingPage />} />
-          <Route path="register" element={<PassengerRegisterPage />} />
         </Route>
 
         {/* Admin Routes */}
@@ -134,12 +141,20 @@ export default function App() {
             <Route path="/passenger/book" element={<PassengerBookPage />} />
             <Route path="/passenger/tickets" element={<UserTicketsPage />} />
             <Route
+              path={ROUTES.PASSENGER_REFUNDS}
+              element={<PassengerRefundRequestsPage />}
+            />
+            <Route
               path={ROUTES.PASSENGER_PROFILE}
               element={<PassengerProfilePage />}
             />
             <Route
               path={ROUTES.PASSENGER_CARGO_TRACK}
               element={<PassengerCargoTrackPage />}
+            />
+            <Route
+              path={ROUTES.PASSENGER_SUPPORT}
+              element={<PassengerSupportChatPage />}
             />
           </Route>
         </Route>
@@ -163,6 +178,10 @@ export default function App() {
             <Route path="/admin/trips" element={<AdminTripsPage />} />
             <Route path="/admin/seats" element={<AdminSeatsPage />} />
             <Route path="/admin/tickets" element={<AdminTicketsPage />} />
+            <Route
+              path={ROUTES.ADMIN_REFUND_REQUESTS}
+              element={<AdminRefundRequestsPage />}
+            />
             <Route path="/admin/payments" element={<AdminPaymentsPage />} />
             <Route path="/admin/cargo" element={<AdminCargoPage />} />
             <Route
@@ -176,6 +195,10 @@ export default function App() {
             <Route
               path="/admin/notifications"
               element={<AdminNotificationsPage />}
+            />
+            <Route
+              path={ROUTES.ADMIN_SUPPORT_CHAT}
+              element={<AdminSupportChatPage />}
             />
             <Route path="/admin/reports" element={<AdminReportsPage />} />
             <Route

@@ -182,12 +182,64 @@ export const deleteTicket = (id) =>
   queryAsync("DELETE FROM tickets WHERE id = ?", [id]);
 
 // QR Code management functions
-export const generateQrToken = (ticketId, expiresAt) => {
-  const token = crypto.randomBytes(32).toString('hex');
-  return queryAsync(
+/** Persist the token that is embedded in the QR image (must match payload). */
+export const setTicketQrCredentials = (ticketId, qrToken, expiresAt) =>
+  queryAsync(
     `UPDATE tickets SET qr_code_token = ?, qr_code_expires_at = ?, qr_code_used = FALSE WHERE id = ?`,
-    [token, expiresAt, ticketId]
+    [qrToken, expiresAt, ticketId]
   );
+
+/** @deprecated use setTicketQrCredentials */
+export const generateQrToken = (ticketId, expiresAt) => {
+  const token = crypto.randomBytes(32).toString("hex");
+  return setTicketQrCredentials(ticketId, token, expiresAt);
+};
+
+/**
+ * One successful scan: atomically mark used and set expiry to now so the token is dead immediately.
+ */
+export const consumeQrToken = async (token, ipAddress, userAgent) => {
+  const res = await queryAsync(
+    `UPDATE tickets SET
+       qr_code_used = TRUE,
+       qr_code_used_at = UTC_TIMESTAMP(),
+       qr_code_expires_at = UTC_TIMESTAMP(),
+       qr_code_ip = ?,
+       qr_code_user_agent = ?
+     WHERE qr_code_token = ?
+       AND qr_code_used = FALSE
+       AND (qr_code_expires_at IS NULL OR qr_code_expires_at > UTC_TIMESTAMP())
+       AND status IN ('confirmed', 'reserved')`,
+    [ipAddress, userAgent, token]
+  );
+  const affected = res?.affectedRows ?? 0;
+  if (affected === 1) {
+    const rows = await queryAsync(
+      `SELECT id FROM tickets WHERE qr_code_token = ? LIMIT 1`,
+      [token]
+    );
+    if (rows.length) return { valid: true, ticketId: rows[0].id };
+  }
+
+  const rows = await queryAsync(
+    `SELECT id, qr_code_used, qr_code_expires_at, status FROM tickets WHERE qr_code_token = ?`,
+    [token]
+  );
+  if (!rows.length) return { valid: false, reason: "Token not found" };
+  const ticket = rows[0];
+  if (ticket.qr_code_used) {
+    return { valid: false, reason: "QR code already used" };
+  }
+  if (
+    ticket.qr_code_expires_at &&
+    new Date(ticket.qr_code_expires_at) < new Date()
+  ) {
+    return { valid: false, reason: "QR code expired" };
+  }
+  if (ticket.status !== "confirmed" && ticket.status !== "reserved") {
+    return { valid: false, reason: "Invalid ticket status" };
+  }
+  return { valid: false, reason: "Could not validate QR code" };
 };
 
 export const validateAndUseQrToken = (token, ipAddress, userAgent) => {
@@ -195,28 +247,28 @@ export const validateAndUseQrToken = (token, ipAddress, userAgent) => {
     `SELECT t.id, t.qr_code_used, t.qr_code_expires_at, t.status 
      FROM tickets t WHERE t.qr_code_token = ?`,
     [token]
-  ).then(rows => {
+  ).then((rows) => {
     if (!rows.length) {
-      return { valid: false, reason: 'Token not found' };
+      return { valid: false, reason: "Token not found" };
     }
-    
+
     const ticket = rows[0];
-    
-    // Check if already used
+
     if (ticket.qr_code_used) {
-      return { valid: false, reason: 'QR code already used' };
+      return { valid: false, reason: "QR code already used" };
     }
-    
-    // Check if expired
-    if (ticket.qr_code_expires_at && new Date(ticket.qr_code_expires_at) < new Date()) {
-      return { valid: false, reason: 'QR code expired' };
+
+    if (
+      ticket.qr_code_expires_at &&
+      new Date(ticket.qr_code_expires_at) < new Date()
+    ) {
+      return { valid: false, reason: "QR code expired" };
     }
-    
-    // Check ticket status
-    if (ticket.status !== 'confirmed' && ticket.status !== 'reserved') {
-      return { valid: false, reason: 'Invalid ticket status' };
+
+    if (ticket.status !== "confirmed" && ticket.status !== "reserved") {
+      return { valid: false, reason: "Invalid ticket status" };
     }
-    
+
     return { valid: true, ticketId: ticket.id };
   });
 };
@@ -225,7 +277,7 @@ export const markQrCodeAsUsed = (ticketId, ipAddress, userAgent) => {
   return queryAsync(
     `UPDATE tickets SET 
      qr_code_used = TRUE, 
-     qr_code_used_at = NOW(), 
+     qr_code_used_at = UTC_TIMESTAMP(), 
      qr_code_ip = ?, 
      qr_code_user_agent = ? 
      WHERE id = ?`,

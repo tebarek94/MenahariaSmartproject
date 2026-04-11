@@ -28,7 +28,7 @@ export const paymentService = {
   // Get payment receipt
   getReceipt: (id) => api.get(`/api/payments/${id}/receipt`),
 
-  /** Chapa: start checkout (body: ticket_id, amount, return_url optional). */
+  /** Chapa: start checkout ({ ticket_id, amount } or { cargo_id, amount }, return_url optional). */
   chapaInitialize: (body) =>
     api.post("/api/payments/chapa/initialize", body),
 

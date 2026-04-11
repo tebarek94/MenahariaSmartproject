@@ -28,19 +28,13 @@
 docker run --name menahariya-mysql -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=menahariya_smart -p 3306:3306 -d mysql:8.0
 ```
 
-## Database Migration
+## Database schema
 
-After MySQL is running, execute the migration:
+After MySQL is running, import the full schema (creates DB `menahariya_smart` if missing):
 
 ```bash
-# Navigate to backend directory
 cd backend
-
-# Run basic database setup (if you have existing schema)
-mysql -u root -p menahariya_smart < database/basic_schema.sql
-
-# Run Chapa payment migration
-mysql -u root -p menahariya_smart < database/migrations/001_add_chapa_payment_support.sql
+mysql -u root -p < database/menahariya_smart_full_schema.sql
 ```
 
 ## Environment Configuration

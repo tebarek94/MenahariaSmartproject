@@ -1,34 +1,64 @@
-import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { ticketsService } from "../services/tickets.service";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ticketsService } from "@/services/tickets.service.js";
+import { extractQrTokenFromScan } from "@/utils/qrScan.js";
 
 function QRScanPage() {
-  const { token } = useParams();
+  const { token: pathToken } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [ticket, setTicket] = useState(null);
   const [usedAt, setUsedAt] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const rawFromRoute = useMemo(() => {
+    const q =
+      searchParams.get("token") ||
+      searchParams.get("t") ||
+      searchParams.get("raw") ||
+      "";
+    return (pathToken && String(pathToken).trim()) || q.trim() || "";
+  }, [pathToken, searchParams]);
+
+  const secretToken = useMemo(
+    () => extractQrTokenFromScan(rawFromRoute),
+    [rawFromRoute]
+  );
+
   useEffect(() => {
     const validateTicket = async () => {
+      if (!secretToken) {
+        setLoading(false);
+        setError(
+          "Invalid or missing ticket link. Scan the QR on your ticket (it should open this page automatically), or use Support if the code only shows as text."
+        );
+        setTicket(null);
+        setUsedAt(null);
+        return;
+      }
+
       try {
         setLoading(true);
-        const response = await ticketsService.validateQr(token);
+        const response = await ticketsService.validateQr(secretToken);
         setTicket(response?.ticket ?? null);
         setUsedAt(response?.used_at ?? null);
         setError(null);
       } catch (err) {
-        setError(err?.data?.message || err.message || "Failed to validate QR code");
+        setError(
+          err?.data?.message ||
+            err?.message ||
+            "Failed to validate QR code"
+        );
+        setTicket(null);
+        setUsedAt(null);
       } finally {
         setLoading(false);
       }
     };
 
-    if (token) {
-      validateTicket();
-    }
-  }, [token]);
+    validateTicket();
+  }, [secretToken]);
 
   const formatDate = (dateString) => {
     if (!dateString) return "N/A";
@@ -40,10 +70,15 @@ function QRScanPage() {
     (error.toLowerCase().includes("expired") ||
       error.toLowerCase().includes("already used"));
 
+  const tokenPreview =
+    secretToken.length > 18
+      ? `${secretToken.slice(0, 10)}…${secretToken.slice(-6)}`
+      : secretToken;
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <div className="text-white">Validating QR code...</div>
+        <div className="text-white">Validating QR code…</div>
       </div>
     );
   }
@@ -63,19 +98,23 @@ function QRScanPage() {
               isExpiredError ? "text-yellow-300" : "text-red-400"
             }`}
           >
-            {isExpiredError ? "QR Code Expired" : "QR Code Error"}
+            {isExpiredError ? "QR code unusable" : "QR validation failed"}
           </h1>
-          <p className={isExpiredError ? "text-yellow-100 mb-4" : "text-red-300 mb-4"}>
-            {isExpiredError
-              ? "This QR code has expired or has already been used."
-              : error}
+          <p
+            className={
+              isExpiredError ? "text-yellow-100 mb-4" : "text-red-300 mb-4"
+            }
+          >
+            {error}
           </p>
           {isExpiredError ? (
             <p className="mb-4 text-sm text-yellow-200/90">
-              Ask the administrator to generate a new valid ticket QR code if this trip is still active.
+              Ask the administrator to regenerate the ticket QR if the trip is
+              still valid.
             </p>
           ) : null}
           <button
+            type="button"
             onClick={() => navigate("/login")}
             className={`text-white px-4 py-2 rounded ${
               isExpiredError
@@ -97,6 +136,13 @@ function QRScanPage() {
       </div>
     );
   }
+
+  const seatLabel =
+    ticket.seat_number != null && ticket.seat_number !== ""
+      ? String(ticket.seat_number)
+      : ticket.seat_id != null
+        ? `#${ticket.seat_id}`
+        : "—";
 
   return (
     <div className="min-h-screen bg-slate-900 py-8 px-4">
@@ -122,7 +168,8 @@ function QRScanPage() {
                   Ticket Accepted
                 </div>
                 <div className="mt-4 text-slate-300">
-                  This QR code has been validated successfully.
+                  This QR code has been validated successfully. It is now
+                  single-use only: the same code cannot be scanned again.
                 </div>
                 {usedAt ? (
                   <div className="mt-4 rounded-lg bg-white/5 p-3 text-sm text-slate-200">
@@ -130,7 +177,7 @@ function QRScanPage() {
                   </div>
                 ) : null}
                 <div className="mt-4 rounded-lg bg-white/5 p-3 text-sm text-slate-400">
-                  Token: {token.substring(0, 16)}...
+                  Token: {tokenPreview}
                 </div>
               </div>
             </div>
@@ -176,7 +223,7 @@ function QRScanPage() {
                     </div>
                     <div className="bg-white/10 rounded-lg p-3">
                       <p className="text-blue-100 text-xs mb-1">Seat</p>
-                      <p className="text-white font-bold">{ticket.seat_id}</p>
+                      <p className="text-white font-bold">{seatLabel}</p>
                     </div>
                   </div>
                 </div>
@@ -323,7 +370,11 @@ function QRScanPage() {
                           ? "bg-green-500 text-white"
                           : ticket.status === "reserved"
                             ? "bg-blue-500 text-white"
-                            : "bg-gray-500 text-white"
+                            : ticket.status === "used"
+                              ? "bg-teal-500 text-white"
+                              : ticket.status === "cancelled"
+                                ? "bg-slate-500 text-white"
+                                : "bg-gray-500 text-white"
                       }`}
                     >
                       {ticket.status?.toUpperCase() || "RESERVED"}
@@ -361,6 +412,7 @@ function QRScanPage() {
                 Issued: {formatDate(ticket.issued_at)}
               </div>
               <button
+                type="button"
                 onClick={() => navigate("/login")}
                 className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded"
               >
@@ -376,19 +428,18 @@ function QRScanPage() {
           </h3>
           <ul className="space-y-2 text-slate-300">
             <li>
-              1. Each QR code is single-use and becomes invalid after successful
-              validation.
+              1. Ticket QR codes open this page automatically when scanned with a
+              camera. If you only see text, open the ticket PDF/link from your
+              phone.
             </li>
             <li>
-              2. Expired or already-used QR codes will be rejected by the backend.
+              2. Each QR is single-use; expired or already-used codes are rejected.
             </li>
             <li>
-              3. The ticket details shown here come directly from the validated
-              backend record.
+              3. Details above come from the server after a successful check.
             </li>
             <li>
-              4. Drivers and staff can rely on this page as a real validation
-              result, not just a preview.
+              4. Staff can treat this screen as proof of validation for boarding.
             </li>
           </ul>
         </div>

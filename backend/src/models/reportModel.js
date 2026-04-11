@@ -1,25 +1,43 @@
 import { queryAsync } from "../config/db.js";
 
-export const createReport = ({
+/** MySQL ER_BAD_FIELD_ERROR — schema before migration 005/009 */
+function isReportsExtendedColumnsMissing(err) {
+  if (err?.code !== "ER_BAD_FIELD_ERROR") return false;
+  const m = String(err?.sqlMessage || "");
+  return /\b(source|status|summary)\b/i.test(m);
+}
+
+export const createReport = async ({
   type,
   date_range: dateRange,
   file_path: filePath,
   source = "manual",
   status = "active",
   summary = null,
-} = {}) =>
-  queryAsync(
-    `INSERT INTO reports (type, date_range, file_path, source, status, summary)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [
-      type ?? null,
-      dateRange ?? null,
-      filePath ?? null,
-      source ?? "manual",
-      status ?? "active",
-      summary ?? null,
-    ]
-  );
+} = {}) => {
+  const base = [type ?? null, dateRange ?? null, filePath ?? null];
+  const full = [
+    ...base,
+    source ?? "manual",
+    status ?? "active",
+    summary ?? null,
+  ];
+  try {
+    return await queryAsync(
+      `INSERT INTO reports (type, date_range, file_path, source, status, summary)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      full
+    );
+  } catch (e) {
+    if (isReportsExtendedColumnsMissing(e)) {
+      return queryAsync(
+        `INSERT INTO reports (type, date_range, file_path) VALUES (?, ?, ?)`,
+        base
+      );
+    }
+    throw e;
+  }
+};
 
 export const getAllReports = ({ status, source } = {}) => {
   let sql = "SELECT * FROM reports WHERE 1=1";
@@ -39,7 +57,7 @@ export const getAllReports = ({ status, source } = {}) => {
 export const getReportById = (id) =>
   queryAsync("SELECT * FROM reports WHERE id = ?", [id]);
 
-export const updateReport = (
+export const updateReport = async (
   id,
   {
     type,
@@ -49,19 +67,30 @@ export const updateReport = (
     status = "active",
     summary = null,
   }
-) =>
-  queryAsync(
-    `UPDATE reports SET type = ?, date_range = ?, file_path = ?, source = ?, status = ?, summary = ? WHERE id = ?`,
-    [
-      type ?? null,
-      dateRange ?? null,
-      filePath ?? null,
-      source ?? "manual",
-      status ?? "active",
-      summary ?? null,
-      id,
-    ]
-  );
+) => {
+  const base = [type ?? null, dateRange ?? null, filePath ?? null];
+  const full = [
+    ...base,
+    source ?? "manual",
+    status ?? "active",
+    summary ?? null,
+    id,
+  ];
+  try {
+    return await queryAsync(
+      `UPDATE reports SET type = ?, date_range = ?, file_path = ?, source = ?, status = ?, summary = ? WHERE id = ?`,
+      full
+    );
+  } catch (e) {
+    if (isReportsExtendedColumnsMissing(e)) {
+      return queryAsync(
+        `UPDATE reports SET type = ?, date_range = ?, file_path = ? WHERE id = ?`,
+        [...base, id]
+      );
+    }
+    throw e;
+  }
+};
 
 export const deleteReport = (id) =>
   queryAsync("DELETE FROM reports WHERE id = ?", [id]);

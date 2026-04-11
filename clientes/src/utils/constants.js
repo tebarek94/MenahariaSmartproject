@@ -1,16 +1,38 @@
-/** API base: Vite proxy uses same origin in dev; override for production build */
+/**
+ * API base URL. Production: set `VITE_API_URL`. Dev: defaults to backend on :5000 so
+ * Socket.IO hits the server directly (avoids flaky Vite `/socket.io` ws proxy / ECONNABORTED noise).
+ */
+const envApiBase = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "";
 export const API_BASE =
-  import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "";
+  envApiBase ||
+  (import.meta.env.DEV ? "http://localhost:5000" : "");
 
 export const STORAGE_KEYS = {
   TOKEN: "menahariya_token",
   USER: "menahariya_user",
   /** After Chapa checkout redirect, verify with this tx_ref once. */
   CHAPA_PENDING_TX_REF: "menahariya_chapa_pending_tx_ref",
+  /** Same as above, for cargo fee checkout return. */
+  CHAPA_PENDING_CARGO_TX_REF: "menahariya_chapa_pending_cargo_tx_ref",
 };
 
 /** Same-tab refresh after updating localStorage (storage event only fires across tabs). */
 export const AUTH_LOCAL_SYNC_EVENT = "menahariya_auth_local_sync";
+
+/** `CustomEvent` on `window` when Socket.IO pushes data (see `RealtimeBridge`). */
+export const REALTIME_DISPATCH_EVENT = "menahariya:realtime";
+
+/** Server → client: new in-app notification for this user. */
+export const REALTIME_NOTIFICATION_NEW = "notification:new";
+
+/** Server → client: passenger ↔ admin support chat line item. */
+export const REALTIME_SUPPORT_THREAD_MESSAGE = "support:thread_message";
+
+/** Server → client: new ticket refund request (admins). */
+export const REALTIME_REFUND_REQUEST_NEW = "refund_request:new";
+
+/** Server → client: refund request approved/rejected (admins) or resolution ping (passenger). */
+export const REALTIME_REFUND_REQUEST_UPDATED = "refund_request:updated";
 
 /** DB `roles.id` for admin row (override if your seed differs). */
 export const ADMIN_ROLE_ID =
@@ -38,8 +60,11 @@ export const ROUTES = {
   PASSENGER_DASHBOARD: "/passenger/dashboard",
   PASSENGER_BOOK: "/passenger/book",
   PASSENGER_TICKETS: "/passenger/tickets",
+  /** Refund / cancellation request status (linked from sidebar). */
+  PASSENGER_REFUNDS: "/passenger/refunds",
   PASSENGER_PROFILE: "/passenger/profile",
   PASSENGER_CARGO_TRACK: "/passenger/cargo/track",
+  PASSENGER_SUPPORT: "/passenger/support",
   PASSENGER_REGISTER: "/register",
   MY_TICKETS: "/my-tickets",
   /** RBAC (backend: /api/users, /roles, /permissions, /role-permissions) */
@@ -58,6 +83,8 @@ export const ROUTES = {
   ADMIN_CARGO_RECEIPTS: "/admin/cargo-receipts",
   ADMIN_LOGIN_HISTORY: "/admin/login-history",
   ADMIN_NOTIFICATIONS: "/admin/notifications",
+  ADMIN_REFUND_REQUESTS: "/admin/refund-requests",
+  ADMIN_SUPPORT_CHAT: "/admin/support-chat",
   ADMIN_REPORTS: "/admin/reports",
   /** Read-only joined views */
   ADMIN_RELATIONS: "/admin/relations",

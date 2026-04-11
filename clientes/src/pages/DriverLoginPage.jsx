@@ -193,11 +193,16 @@ export function DriverLoginPage() {
 
   return (
     <AuthShell
+      backTo="/"
+      backLabel="← Menahariya Smart"
       eyebrow="Driver portal"
-      title="Sign in"
+      heroTitle="Your trips, passengers, and cargo on the road"
+      heroDescription="Access today’s departures, passenger lists, cargo assignments, and alerts. Sign in with your driver credentials to get rolling."
+      panelTitle="Sign in"
+      panelSubtitle="Ethiopian mobile number (09…) and your password."
       footer={
         <AuthFooterLinks
-          items={[{ to: "/login", label: "Back to main login" }]}
+          items={[{ to: ROUTES.LOGIN, label: "Passenger sign in" }]}
         />
       }
     >

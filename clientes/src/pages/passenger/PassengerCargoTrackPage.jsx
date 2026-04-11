@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { cargoService } from "@/services/cargo.service.js";
+import { paymentService } from "@/services/payment.service.js";
 import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Input } from "@/ui/Input.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
-import { ROUTES } from "@/utils/constants.js";
+import { ROUTES, STORAGE_KEYS } from "@/utils/constants.js";
+import {
+  interpretCargoChapaVerify,
+  isCargoFeePaid,
+  parseCargoFeeForChapa,
+} from "@/utils/cargoPayment.js";
 import { formatDate, formatMoney } from "@/utils/format.js";
 
 function normalizeList(x) {
@@ -16,7 +22,7 @@ const POLL_MS = 30_000;
 
 function statusTone(s) {
   const v = String(s ?? "").toLowerCase();
-  if (v === "confirmed" || v === "completed" || v === "delivered")
+  if (v === "paid" || v === "confirmed" || v === "completed" || v === "delivered")
     return "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/30";
   if (v === "pending" || v === "reserved")
     return "bg-amber-500/20 text-amber-200 ring-1 ring-amber-500/30";
@@ -34,6 +40,9 @@ export function PassengerCargoTrackPage() {
   const [query, setQuery] = useState("");
   const [lastSync, setLastSync] = useState(null);
   const [copyHint, setCopyHint] = useState("");
+  const [payingId, setPayingId] = useState(null);
+  const [verifyingReturn, setVerifyingReturn] = useState(false);
+  const [verifyNotice, setVerifyNotice] = useState("");
 
   const load = useCallback(async (opts = { quiet: false }) => {
     try {
@@ -51,6 +60,50 @@ export function PassengerCargoTrackPage() {
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  useEffect(() => {
+    const pending = sessionStorage.getItem(STORAGE_KEYS.CHAPA_PENDING_CARGO_TX_REF);
+    if (!pending) return;
+
+    let cancelled = false;
+    setVerifyingReturn(true);
+    (async () => {
+      try {
+        const data = await paymentService.chapaVerify(pending);
+        if (cancelled) return;
+        const outcome = interpretCargoChapaVerify(data, null);
+        if (outcome.clearPending) {
+          sessionStorage.removeItem(STORAGE_KEYS.CHAPA_PENDING_CARGO_TX_REF);
+        }
+        if (outcome.success) {
+          setError("");
+          await load({ quiet: true });
+          setVerifyNotice("Cargo fee payment confirmed.");
+          setTimeout(() => setVerifyNotice(""), 6000);
+        } else if (outcome.userMessage) {
+          setError(outcome.userMessage);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        const outcome = interpretCargoChapaVerify(null, err);
+        if (outcome.clearPending) {
+          sessionStorage.removeItem(STORAGE_KEYS.CHAPA_PENDING_CARGO_TX_REF);
+        }
+        setError(
+          outcome.userMessage ||
+            err?.data?.message ||
+            err?.message ||
+            "Payment verification failed",
+        );
+      } finally {
+        if (!cancelled) setVerifyingReturn(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [load]);
 
   useEffect(() => {
@@ -82,6 +135,40 @@ export function PassengerCargoTrackPage() {
       );
     });
   }, [cargo, q]);
+
+  async function handlePayCargoFee(c) {
+    const amt = parseCargoFeeForChapa(c.fee);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setError("Cargo fee is missing; contact support.");
+      return;
+    }
+    if (isCargoFeePaid(c.payment_status)) {
+      setError("This shipment is already paid.");
+      return;
+    }
+    setPayingId(c.id);
+    setError("");
+    try {
+      const returnUrl = `${window.location.origin}${ROUTES.PASSENGER_CARGO_TRACK}`;
+      const data = await paymentService.chapaInitialize({
+        cargo_id: c.id,
+        amount: amt,
+        return_url: returnUrl,
+      });
+      const checkoutUrl = data?.checkout_url;
+      const txRef = data?.tx_ref;
+      if (!checkoutUrl || !txRef) {
+        setError("Invalid payment response from server");
+        return;
+      }
+      sessionStorage.setItem(STORAGE_KEYS.CHAPA_PENDING_CARGO_TX_REF, txRef);
+      window.location.assign(checkoutUrl);
+    } catch (err) {
+      setError(err?.data?.message || err?.message || "Could not start payment");
+    } finally {
+      setPayingId(null);
+    }
+  }
 
   async function copyCode(code) {
     if (!code) return;
@@ -143,6 +230,21 @@ export function PassengerCargoTrackPage() {
         </Card>
       ) : null}
 
+      {verifyNotice ? (
+        <Card>
+          <p className="text-sm text-emerald-300">{verifyNotice}</p>
+        </Card>
+      ) : null}
+
+      {verifyingReturn ? (
+        <Card>
+          <div className="flex items-center gap-3">
+            <Spinner />
+            <p className="text-p-muted text-sm">Confirming cargo payment…</p>
+          </div>
+        </Card>
+      ) : null}
+
       <Card className="!p-4">
         <Input
           label="Filter shipments"
@@ -195,6 +297,11 @@ export function PassengerCargoTrackPage() {
                           trip: {c.trip_status}
                         </span>
                       ) : null}
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${statusTone(isCargoFeePaid(c.payment_status) ? "paid" : c.payment_status)}`}
+                      >
+                        fee: {c.payment_status ?? "pending"}
+                      </span>
                     </div>
                     <p className="text-p-heading text-base font-semibold">
                       {(c.route_origin ?? "—") + " → " + (c.route_destination ?? "—")}
@@ -233,6 +340,23 @@ export function PassengerCargoTrackPage() {
                         <span className="text-slate-600">Note: </span>
                         {c.content}
                       </p>
+                    ) : null}
+                    {!isCargoFeePaid(c.payment_status) ? (
+                      <div className="pt-2">
+                        <Button
+                          type="button"
+                          className="!text-xs"
+                          disabled={payingId === c.id}
+                          onClick={() => handlePayCargoFee(c)}
+                        >
+                          {payingId === c.id
+                            ? "Opening Chapa…"
+                            : `Pay ${formatMoney(c.fee)} with Chapa`}
+                        </Button>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Pay the cargo fee securely; you will return here after checkout.
+                        </p>
+                      </div>
                     ) : null}
                   </div>
                   <div className="shrink-0 rounded-lg border border-white/10 bg-slate-950/60 p-3 sm:min-w-[200px]">

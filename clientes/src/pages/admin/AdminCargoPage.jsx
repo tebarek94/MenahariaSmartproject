@@ -128,6 +128,16 @@ export function AdminCargoPage() {
     [trips]
   );
 
+  /** Trip must have a driver or the shipment never appears on the driver Cargo page. */
+  const assignableTrips = useMemo(
+    () =>
+      trips.filter((t) => {
+        const d = t.driver_id;
+        return d != null && String(d).trim() !== "" && Number(d) > 0;
+      }),
+    [trips]
+  );
+
   const driverRoleIds = useMemo(() => {
     const set = new Set();
     for (const r of roles) {
@@ -136,38 +146,106 @@ export function AdminCargoPage() {
     return set;
   }, [roles]);
 
-  const driverUsers = useMemo(
-    () => users.filter((u) => driverRoleIds.has(Number(u.role_id))),
-    [users, driverRoleIds]
-  );
+  const driverIdsOnTrips = useMemo(() => {
+    const s = new Set();
+    for (const t of assignableTrips) {
+      s.add(Number(t.driver_id));
+    }
+    return s;
+  }, [assignableTrips]);
+
+  const driverUsersForAssign = useMemo(() => {
+    const byId = new Map();
+    for (const u of users) {
+      const id = Number(u.id);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      const roleMatch = driverRoleIds.has(Number(u.role_id));
+      if (roleMatch || driverIdsOnTrips.has(id)) {
+        byId.set(id, u);
+      }
+    }
+    return [...byId.values()].sort((a, b) =>
+      String(a.full_name ?? "").localeCompare(String(b.full_name ?? ""), undefined, {
+        sensitivity: "base",
+      })
+    );
+  }, [users, driverRoleIds, driverIdsOnTrips]);
 
   const tripsForAssign = useMemo(() => {
-    if (!assignDriverFilter) return trips;
-    return trips.filter(
-      (t) => String(t.driver_id ?? "") === assignDriverFilter
+    let list = assignableTrips;
+    if (String(assignDriverFilter ?? "").trim()) {
+      list = list.filter(
+        (t) => String(t.driver_id ?? "") === String(assignDriverFilter).trim()
+      );
+    }
+    return [...list].sort((a, b) => {
+      const ta = new Date(a.departure_time || 0).getTime();
+      const tb = new Date(b.departure_time || 0).getTime();
+      return ta - tb;
+    });
+  }, [assignableTrips, assignDriverFilter]);
+
+  /**
+   * Trip dropdown: hide trips where every checked cargo row is already on that trip
+   * (nothing to move for the current selection). Empty selection → show all assignable trips.
+   */
+  const tripsForAssignDropdown = useMemo(() => {
+    if (!selectedCargoIds.length) return tripsForAssign;
+
+    const selectedRows = cargo.filter((c) =>
+      selectedCargoIds.some((sid) => Number(sid) === Number(c.id))
     );
-  }, [trips, assignDriverFilter]);
+    if (!selectedRows.length) return tripsForAssign;
 
-  /** Clear trip pick if driver filter hides that trip (deps avoid reading tripsForAssign in TDZ). */
+    return tripsForAssign.filter((t) => {
+      const tid = Number(t.id);
+      return selectedRows.some((row) => Number(row.trip_id) !== tid);
+    });
+  }, [tripsForAssign, selectedCargoIds, cargo]);
+
+  const selectedAssignTrip = useMemo(() => {
+    const tid = Number(assignTripId);
+    if (!Number.isFinite(tid) || tid <= 0) return null;
+    return assignableTrips.find((t) => Number(t.id) === tid) ?? null;
+  }, [assignTripId, assignableTrips]);
+
+  /** Trip choice must stay in the filtered list (driver + selection rules). */
+  const assignTripReady = useMemo(() => {
+    if (!assignTripId.trim()) return false;
+    const tid = Number(assignTripId);
+    if (!Number.isFinite(tid) || tid <= 0) return false;
+    return tripsForAssignDropdown.some((t) => Number(t.id) === tid);
+  }, [assignTripId, tripsForAssignDropdown]);
+
   useEffect(() => {
-    if (!assignTripId) return;
-    const filtered = assignDriverFilter
-      ? trips.filter(
-          (t) => String(t.driver_id ?? "") === assignDriverFilter
-        )
-      : trips;
-    const ok = filtered.some((t) => String(t.id) === assignTripId);
-    if (!ok) setAssignTripId("");
-  }, [assignTripId, assignDriverFilter, trips]);
+    if (!assignTripId.trim()) return;
+    const tid = Number(assignTripId);
+    const inFiltered = tripsForAssignDropdown.some((t) => Number(t.id) === tid);
+    if (!inFiltered) setAssignTripId("");
+  }, [assignTripId, tripsForAssignDropdown]);
 
-  const tripOptionLabel = useCallback(
+  /**
+   * Dropdown option text without "#" (name · numeric id).
+   * Used for assign filters and edit-row selects.
+   */
+  const userOptionText = useCallback(
+    (u, fallbackName = "User") =>
+      `${String(u.full_name ?? "").trim() || fallbackName} · ${u.id}`,
+    []
+  );
+
+  const tripSelectOptionText = useCallback(
     (t) => {
-      const driverPart = t.driver_id
-        ? userLabel(t.driver_id)
-        : "No driver yet";
-      return `#${t.id} · ${driverPart} · ${formatDate(t.departure_time)} · v${t.vehicle_id}`;
+      const u = users.find((x) => String(x.id) === String(t.driver_id));
+      const driverText = u
+        ? userOptionText(u, "Driver")
+        : t.driver_id
+          ? `User id ${t.driver_id}`
+          : "No driver";
+      const v = t.vehicle_id != null ? t.vehicle_id : "—";
+      return `Trip ${t.id} · ${driverText} · ${formatDate(t.departure_time)} · Vehicle ${v}`;
     },
-    [userLabel]
+    [users, userOptionText]
   );
 
   const pendingCargoCount = useMemo(
@@ -249,16 +327,44 @@ export function AdminCargoPage() {
     setError("");
     const tid = Number(assignTripId);
     if (!Number.isFinite(tid) || tid <= 0) {
-      setError("Choose a trip (driver’s run) to assign cargo to.");
+      setError("Choose a trip to assign cargo to.");
+      return;
+    }
+    const tripRow = assignableTrips.find((t) => Number(t.id) === tid);
+    if (!tripRow) {
+      setError(
+        "That trip is not assignable (missing driver) or does not exist. Set a driver on Admin Trips first.",
+      );
+      return;
+    }
+    if (
+      String(assignDriverFilter ?? "").trim() &&
+      String(tripRow.driver_id ?? "") !== String(assignDriverFilter).trim()
+    ) {
+      setError("That trip does not belong to the driver user ID you filtered.");
       return;
     }
     setAssignSubmitting(true);
     try {
       const body = { trip_id: tid, scope, ...extra };
+      if (
+        scope === "ids" &&
+        Array.isArray(body.cargo_ids) &&
+        body.cargo_ids.length
+      ) {
+        body.cargo_ids = body.cargo_ids
+          .map((x) => Number(x))
+          .filter((n) => Number.isInteger(n) && n > 0);
+        if (!body.cargo_ids.length) {
+          setError("No valid cargo rows selected.");
+          return;
+        }
+      }
       const res = await cargoService.bulkAssignTrip(body);
       const n = res?.affectedRows ?? 0;
       setNotice(res?.message || `Updated ${n} cargo row(s).`);
       setSelectedCargoIds([]);
+      setAssignTripId("");
       await refreshCore();
       relationsView.run().catch(() => {});
     } catch (e) {
@@ -424,21 +530,19 @@ export function AdminCargoPage() {
 
       <Card
         title="Assign cargo to a driver’s trip"
-        subtitle="Cargo is tied to a trip; the trip’s driver sees it on their Cargo page. Use filters to pick a driver, then a trip."
+        subtitle="Pick a driver (optional), then a trip. Only trips that already have that driver show in the second list — that driver will see the cargo on their Cargo page."
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Select
-            label="Filter trips by driver"
+            label="Driver"
             value={assignDriverFilter}
-            onChange={(e) => {
-              setAssignDriverFilter(e.target.value);
-            }}
+            onChange={(e) => setAssignDriverFilter(e.target.value)}
             className="min-w-0"
           >
-            <option value="">All trips</option>
-            {driverUsers.map((d) => (
+            <option value="">All drivers</option>
+            {driverUsersForAssign.map((d) => (
               <option key={d.id} value={String(d.id)}>
-                {d.full_name} (#{d.id})
+                {userOptionText(d, "Driver")}
               </option>
             ))}
           </Select>
@@ -448,17 +552,37 @@ export function AdminCargoPage() {
             onChange={(e) => setAssignTripId(e.target.value)}
             className="min-w-0 lg:col-span-2"
           >
-            <option value="">Select trip…</option>
-            {tripsForAssign.map((t) => (
+            <option value="">
+              {tripsForAssign.length === 0
+                ? "No trips for this driver — pick another driver or assign a driver on Admin Trips"
+                : tripsForAssignDropdown.length === 0
+                  ? "All selected cargo is already on these trips — change selection or clear checks"
+                  : "Select trip…"}
+            </option>
+            {tripsForAssignDropdown.map((t) => (
               <option key={t.id} value={String(t.id)}>
-                {tripOptionLabel(t)}
+                {tripSelectOptionText(t)}
               </option>
             ))}
           </Select>
         </div>
+        {selectedCargoIds.length > 0 &&
+        tripsForAssign.length > 0 &&
+        tripsForAssignDropdown.length < tripsForAssign.length ? (
+          <p className="mt-1 text-xs text-slate-500">
+            Trips hidden: every checked shipment is already on that trip (pick a
+            different trip or other rows).
+          </p>
+        ) : null}
+        {assignTripReady && selectedAssignTrip ? (
+          <p className="mt-2 text-xs text-emerald-400/90">
+            {tripSelectOptionText(selectedAssignTrip)}
+          </p>
+        ) : null}
         <p className="mt-2 text-xs text-slate-500">
-          {pendingCargoCount} pending · {selectedCargoIds.length} selected in
-          table
+          {assignableTrips.length} trip{assignableTrips.length === 1 ? "" : "s"}{" "}
+          with a driver · {pendingCargoCount} pending cargo ·{" "}
+          {selectedCargoIds.length} selected in table
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button
@@ -466,7 +590,7 @@ export function AdminCargoPage() {
             variant="primary"
             disabled={
               assignSubmitting ||
-              !assignTripId ||
+              !assignTripReady ||
               selectedCargoIds.length === 0
             }
             onClick={() =>
@@ -478,7 +602,7 @@ export function AdminCargoPage() {
           <Button
             type="button"
             variant="secondary"
-            disabled={assignSubmitting || !assignTripId || pendingCargoCount === 0}
+            disabled={assignSubmitting || !assignTripReady || pendingCargoCount === 0}
             onClick={() => runBulkAssign("pending")}
           >
             Assign all pending ({pendingCargoCount})
@@ -487,7 +611,7 @@ export function AdminCargoPage() {
             type="button"
             variant="ghost"
             className="!text-red-300"
-            disabled={assignSubmitting || !assignTripId || cargo.length === 0}
+            disabled={assignSubmitting || !assignTripReady || cargo.length === 0}
             onClick={() => setConfirmAssignAllOpen(true)}
           >
             Assign every cargo row…
@@ -654,7 +778,7 @@ export function AdminCargoPage() {
                               >
                                 {users.map((u) => (
                                   <option key={u.id} value={u.id}>
-                                    {u.full_name} (#{u.id})
+                                    {userOptionText(u)}
                                   </option>
                                 ))}
                               </Select>
@@ -671,7 +795,7 @@ export function AdminCargoPage() {
                               >
                                 {trips.map((t) => (
                                   <option key={t.id} value={t.id}>
-                                    {tripOptionLabel(t)}
+                                    {tripSelectOptionText(t)}
                                   </option>
                                 ))}
                               </Select>

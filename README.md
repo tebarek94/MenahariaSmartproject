@@ -68,7 +68,7 @@ FRONTEND_URL=http://localhost:5173
 mysql -u root -p < backend/database/menahariya_smart_full_schema.sql
 ```
 
-For an **existing** database that was created without Chapa or other features, use the incremental scripts under `backend/database/migrations/` instead.
+For an **existing** database missing columns or tables, compare your schema to `backend/database/menahariya_smart_full_schema.sql` and apply the needed `ALTER TABLE` / `CREATE TABLE` statements (or reimport on a non-production copy after backup).
 
 5. Review the database connection in `backend/src/config/db.js` and update it for your local MySQL credentials.
 

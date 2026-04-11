@@ -336,16 +336,15 @@ GROUP BY error_message, DATE(created_at);
 ### Debug Mode
 Enable debug logging by setting `NODE_ENV=development`.
 
-## Migration
+## Database
 
-### Running Migrations
+Chapa-related tables and columns are included in the full schema:
+
 ```bash
-# Apply Chapa integration
-mysql -u root -p menahariya_smart < database/migrations/001_add_chapa_payment_support.sql
-
-# Rollback if needed
-mysql -u root -p menahariya_smart < database/migrations/001_remove_chapa_payment_support.sql
+mysql -u root -p < database/menahariya_smart_full_schema.sql
 ```
+
+To remove Chapa-only artifacts from an existing DB, drop or alter the relevant columns/tables manually (there is no bundled rollback script).
 
 ### Data Migration
 Existing payment records remain compatible. New Chapa-specific fields are NULL for old records.

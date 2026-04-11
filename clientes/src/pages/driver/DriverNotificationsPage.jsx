@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { notificationsService } from "@/services/notifications.service.js";
+import {
+  REALTIME_DISPATCH_EVENT,
+  REALTIME_NOTIFICATION_NEW,
+} from "@/utils/constants.js";
 import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
@@ -34,6 +38,16 @@ export function DriverNotificationsPage() {
   }, [refresh]);
 
   useEffect(() => {
+    const onRealtime = (e) => {
+      if (e.detail?.type === REALTIME_NOTIFICATION_NEW) {
+        refresh({ silent: true });
+      }
+    };
+    window.addEventListener(REALTIME_DISPATCH_EVENT, onRealtime);
+    return () => window.removeEventListener(REALTIME_DISPATCH_EVENT, onRealtime);
+  }, [refresh]);
+
+  useEffect(() => {
     const id = window.setInterval(() => refresh({ silent: true }), 60_000);
     const onVisible = () => {
       if (document.visibilityState === "visible") refresh({ silent: true });
@@ -61,8 +75,8 @@ export function DriverNotificationsPage() {
             Notifications
           </h2>
           <p className="text-sm text-slate-600 dark:text-primary-400/80">
-            Alerts when passengers book your trips (created automatically). Refreshes every minute and
-            when you return to this tab.
+            Alerts when passengers book your trips (created automatically). Updates in real time when
+            connected, and also refreshes every minute and when you return to this tab.
           </p>
         </div>
         <Button variant="ghost" className="self-start" onClick={() => refresh()}>

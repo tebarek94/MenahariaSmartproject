@@ -1,4 +1,5 @@
 import * as notificationModel from "../models/notificationModel.js";
+import { emitToUser } from "../realtime/socketServer.js";
 import { sendSuccess, sendError } from "../utils/apiResponse.js";
 import { isAdmin, isDriver, isPassenger } from "../constants/roles.js";
 
@@ -21,9 +22,20 @@ export const create = async (req, res) => {
       channel,
       status
     );
+    const nid = result?.insertId;
+    const uid = user_id != null ? Number(user_id) : null;
+    if (nid && uid != null && Number.isInteger(uid) && uid > 0) {
+      emitToUser(uid, "notification:new", {
+        id: nid,
+        user_id: uid,
+        message,
+        channel: channel ?? "sms",
+        status: status ?? "pending",
+      });
+    }
     return sendSuccess(
       res,
-      { message: "Notification created", id: result.insertId },
+      { message: "Notification created", id: nid },
       201
     );
   } catch (err) {

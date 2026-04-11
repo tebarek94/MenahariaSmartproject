@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useAsync } from "@/hooks/useAsync.js";
 import { seatsService } from "@/services/seats.service.js";
 import { vehiclesService } from "@/services/vehicles.service.js";
@@ -35,6 +35,9 @@ export function AdminSeatsPage() {
     seat_number: "",
   });
 
+  /** `null` = table hidden; `'all'` or vehicle id = filtered table shown */
+  const [tableSelection, setTableSelection] = useState(null);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -56,10 +59,66 @@ export function AdminSeatsPage() {
     refresh();
   }, [refresh]);
 
+  const seatsByVehicle = useMemo(() => {
+    const map = new Map();
+    for (const s of seats) {
+      const vid = Number(s.vehicle_id);
+      if (!Number.isFinite(vid)) continue;
+      if (!map.has(vid)) map.set(vid, []);
+      map.get(vid).push(s);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => Number(a.seat_number) - Number(b.seat_number));
+    }
+    return [...map.entries()].sort(([a], [b]) => a - b);
+  }, [seats]);
+
+  const seatCountByVehicleId = useMemo(() => {
+    const m = new Map();
+    for (const [vid, list] of seatsByVehicle) m.set(vid, list.length);
+    return m;
+  }, [seatsByVehicle]);
+
+  const vehicleTableCards = useMemo(() => {
+    const ids = new Set(vehicles.map((v) => Number(v.id)));
+    for (const vid of seatCountByVehicleId.keys()) ids.add(vid);
+    return [...ids]
+      .filter((id) => Number.isFinite(id))
+      .sort((a, b) => a - b)
+      .map((id) => {
+        const v = vehicles.find((x) => Number(x.id) === id);
+        const label =
+          v?.plate_number || v?.model || `Vehicle #${id}`;
+        return {
+          id,
+          label,
+          count: seatCountByVehicleId.get(id) ?? 0,
+        };
+      });
+  }, [vehicles, seatCountByVehicleId]);
+
+  const tableRows = useMemo(() => {
+    if (tableSelection == null) return [];
+    if (tableSelection === "all") return seats;
+    return seats.filter((s) => Number(s.vehicle_id) === tableSelection);
+  }, [seats, tableSelection]);
+
+  function toggleTableSelection(key) {
+    setTableSelection((cur) => (cur === key ? null : key));
+    closeEdit();
+  }
+
   useEffect(() => {
     relationsView.run().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (editingId == null) return;
+    document
+      .getElementById(`seat-row-${editingId}`)
+      ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [editingId]);
 
   function openEdit(x) {
     setEditingId(x.id);
@@ -223,119 +282,206 @@ export function AdminSeatsPage() {
         </form>
       </Card>
 
-      <Card title="All seats">
-        <div className="mb-3">
+      <Card
+        title="All seats"
+        subtitle="Click a vehicle card (or “All vehicles”) to open the detailed table. Click again to hide."
+      >
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
             Refresh
           </Button>
+          {tableSelection != null ? (
+            <Button
+              variant="ghost"
+              className="!text-xs"
+              type="button"
+              onClick={() => {
+                setTableSelection(null);
+                closeEdit();
+              }}
+            >
+              Hide table
+            </Button>
+          ) : null}
         </div>
-        <div className="overflow-x-auto rounded-lg border border-primary-900/30">
-          <table className="w-full min-w-[480px] border-collapse text-left text-sm">
-            <thead className="bg-slate-900/95 text-xs uppercase text-primary-400/90">
-              <tr className="border-b border-primary-900/40">
-                <th className="px-2 py-2">Id</th>
-                <th className="px-2 py-2">Vehicle</th>
-                <th className="px-2 py-2">Seat #</th>
-                <th className="px-2 py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/90">
-              {seats.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="px-3 py-8 text-center text-slate-500">
-                    No seats
-                  </td>
-                </tr>
-              ) : (
-                seats.map((s) => (
-                  <Fragment key={s.id}>
-                    <tr className="hover:bg-slate-800/30">
-                      <td className="px-2 py-2 font-mono text-xs">{s.id}</td>
-                      <td className="px-2 py-2">{s.vehicle_id}</td>
-                      <td className="px-2 py-2">{s.seat_number}</td>
-                      <td className="px-2 py-2">
-                        <div className="flex gap-1">
-                          <IconButton
-                            variant="ghost"
-                            label="Edit"
-                            onClick={() => openEdit(s)}
-                          >
-                            <PencilIcon />
-                          </IconButton>
-                          <IconButton
-                            variant="danger"
-                            label="Delete"
-                            onClick={() => handleRemove(s.id)}
-                          >
-                            <TrashIcon />
-                          </IconButton>
-                        </div>
+
+        {tableSelection == null ? (
+          <p className="mb-3 text-sm text-slate-500">
+            Choose a card to load the seat list in the table below.
+          </p>
+        ) : (
+          <p className="mb-3 text-sm text-primary-200/90">
+            {tableSelection === "all"
+              ? `Showing all ${tableRows.length} seat(s).`
+              : `Showing ${tableRows.length} seat(s) for vehicle #${tableSelection}.`}
+          </p>
+        )}
+
+        <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <button
+            type="button"
+            onClick={() => toggleTableSelection("all")}
+            className={`rounded-xl border p-4 text-left transition ${
+              tableSelection === "all"
+                ? "border-primary-500 bg-primary-950/40 ring-2 ring-primary-500/60"
+                : "border-primary-900/40 bg-slate-950/50 hover:border-primary-700/50 hover:bg-slate-900/50"
+            }`}
+          >
+            <p className="text-xs font-medium uppercase tracking-wide text-primary-400/90">
+              All vehicles
+            </p>
+            <p className="mt-1 text-lg font-semibold text-slate-100">
+              {seats.length}{" "}
+              <span className="text-sm font-normal text-slate-400">seats</span>
+            </p>
+          </button>
+          {vehicleTableCards.map(({ id, label, count }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => toggleTableSelection(id)}
+              className={`rounded-xl border p-4 text-left transition ${
+                tableSelection === id
+                  ? "border-primary-500 bg-primary-950/40 ring-2 ring-primary-500/60"
+                  : "border-primary-900/40 bg-slate-950/50 hover:border-primary-700/50 hover:bg-slate-900/50"
+              }`}
+            >
+              <p className="text-xs font-medium uppercase tracking-wide text-primary-400/90">
+                Vehicle #{id}
+              </p>
+              <p className="mt-0.5 truncate text-sm text-slate-200" title={label}>
+                {label}
+              </p>
+              <p className="mt-1 text-lg font-semibold text-slate-100">
+                {count}{" "}
+                <span className="text-sm font-normal text-slate-400">seats</span>
+              </p>
+            </button>
+          ))}
+        </div>
+
+        {tableSelection != null ? (
+          <div className="overflow-x-auto rounded-lg border border-primary-900/30">
+            <div className="max-h-[min(50vh,22rem)] overflow-y-auto overscroll-contain">
+              <table className="w-full min-w-[480px] border-collapse text-left text-sm">
+                <thead className="sticky top-0 z-10 bg-slate-900/95 text-xs uppercase text-primary-400/90 shadow-[0_1px_0_0_rgba(15,23,42,0.9)] backdrop-blur-sm">
+                  <tr className="border-b border-primary-900/40">
+                    <th className="px-2 py-1.5">Id</th>
+                    <th className="px-2 py-1.5">Vehicle</th>
+                    <th className="px-2 py-1.5">Seat #</th>
+                    <th className="px-2 py-1.5">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/90">
+                  {tableRows.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="px-3 py-8 text-center text-slate-500"
+                      >
+                        No seats in this view
                       </td>
                     </tr>
-                    {editingId === s.id ? (
-                      <tr className="bg-primary-950/20">
-                        <td colSpan={4} className="p-4">
-                          <form onSubmit={handleUpdate} className="space-y-3">
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              <Select
-                                label="Vehicle"
-                                value={editForm.vehicle_id}
-                                onChange={(e) =>
-                                  setEditForm((f) => ({
-                                    ...f,
-                                    vehicle_id: e.target.value,
-                                  }))
-                                }
-                                required
-                              >
-                                {vehicles.map((v) => (
-                                  <option key={v.id} value={v.id}>
-                                    #{v.id} {v.plate_number || v.model}
-                                  </option>
-                                ))}
-                              </Select>
-                              <Input
-                                label="Seat number"
-                                type="number"
-                                min="1"
-                                value={editForm.seat_number}
-                                onChange={(e) =>
-                                  setEditForm((f) => ({
-                                    ...f,
-                                    seat_number: e.target.value,
-                                  }))
-                                }
-                                required
-                              />
-                            </div>
-                            <div className="flex gap-2">
-                              <IconButton
-                                variant="primary"
-                                type="submit"
-                                label="Save"
-                                disabled={savingEdit}
-                              >
-                                <CheckIcon />
-                              </IconButton>
+                  ) : (
+                    tableRows.map((s) => (
+                      <Fragment key={s.id}>
+                        <tr
+                          id={`seat-row-${s.id}`}
+                          className="hover:bg-slate-800/30"
+                        >
+                          <td className="px-2 py-1.5 font-mono text-xs">
+                            {s.id}
+                          </td>
+                          <td className="px-2 py-1.5">{s.vehicle_id}</td>
+                          <td className="px-2 py-1.5">{s.seat_number}</td>
+                          <td className="px-2 py-1.5">
+                            <div className="flex gap-1">
                               <IconButton
                                 variant="ghost"
-                                type="button"
-                                label="Cancel"
-                                onClick={closeEdit}
+                                label="Edit"
+                                onClick={() => openEdit(s)}
                               >
-                                <XIcon />
+                                <PencilIcon />
+                              </IconButton>
+                              <IconButton
+                                variant="danger"
+                                label="Delete"
+                                onClick={() => handleRemove(s.id)}
+                              >
+                                <TrashIcon />
                               </IconButton>
                             </div>
-                          </form>
-                        </td>
-                      </tr>
-                    ) : null}
-                  </Fragment>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                          </td>
+                        </tr>
+                        {editingId === s.id ? (
+                          <tr className="bg-primary-950/20">
+                            <td colSpan={4} className="p-3 sm:p-4">
+                              <form
+                                onSubmit={handleUpdate}
+                                className="space-y-3"
+                              >
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                  <Select
+                                    label="Vehicle"
+                                    value={editForm.vehicle_id}
+                                    onChange={(e) =>
+                                      setEditForm((f) => ({
+                                        ...f,
+                                        vehicle_id: e.target.value,
+                                      }))
+                                    }
+                                    required
+                                  >
+                                    {vehicles.map((v) => (
+                                      <option key={v.id} value={v.id}>
+                                        #{v.id} {v.plate_number || v.model}
+                                      </option>
+                                    ))}
+                                  </Select>
+                                  <Input
+                                    label="Seat number"
+                                    type="number"
+                                    min="1"
+                                    value={editForm.seat_number}
+                                    onChange={(e) =>
+                                      setEditForm((f) => ({
+                                        ...f,
+                                        seat_number: e.target.value,
+                                      }))
+                                    }
+                                    required
+                                  />
+                                </div>
+                                <div className="flex gap-2">
+                                  <IconButton
+                                    variant="primary"
+                                    type="submit"
+                                    label="Save"
+                                    disabled={savingEdit}
+                                  >
+                                    <CheckIcon />
+                                  </IconButton>
+                                  <IconButton
+                                    variant="ghost"
+                                    type="button"
+                                    label="Cancel"
+                                    onClick={closeEdit}
+                                  >
+                                    <XIcon />
+                                  </IconButton>
+                                </div>
+                              </form>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
       </Card>
 
       <Card

@@ -4,9 +4,10 @@
 -- Target: MySQL 8.0+ (utf8mb4, JSON columns).
 -- Usage: mysql -u root -p < database/menahariya_smart_full_schema.sql
 --
--- This file merges core tables implied by backend/src/models/* with migrations:
---   001 Chapa payments, 002 QR, 003 download, 004 seat locking, admin relation views.
--- For upgrading an existing database, prefer the incremental files under migrations/.
+-- Single source of truth for a fresh DB. Includes: Chapa payments, QR/download,
+-- seat locks (trip-scoped), reports (source/status/summary), support chat,
+-- cargo payment_status + payment/cargo links, refund requests, analytics views.
+-- Upgrading an old DB: add missing columns/tables by comparing to this file or dump + reimport on a copy.
 -- =============================================================================
 
 CREATE DATABASE IF NOT EXISTS menahariya_smart
@@ -31,6 +32,7 @@ DROP TABLE IF EXISTS qr_code_usage_logs;
 DROP TABLE IF EXISTS payment_webhooks;
 DROP TABLE IF EXISTS payment_attempts;
 DROP TABLE IF EXISTS payments;
+DROP TABLE IF EXISTS ticket_refund_requests;
 DROP TABLE IF EXISTS tickets;
 DROP TABLE IF EXISTS cargo_receipts;
 DROP TABLE IF EXISTS cargo;
@@ -39,6 +41,7 @@ DROP TABLE IF EXISTS notifications;
 DROP TABLE IF EXISTS trips;
 DROP TABLE IF EXISTS seats;
 DROP TABLE IF EXISTS role_permissions;
+DROP TABLE IF EXISTS support_chat_messages;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS reports;
 DROP TABLE IF EXISTS vehicles;
@@ -191,11 +194,34 @@ CREATE TABLE tickets (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
+-- Refund / cancellation requests (migration 008)
+-- ---------------------------------------------------------------------------
+CREATE TABLE ticket_refund_requests (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  ticket_id INT NOT NULL,
+  passenger_user_id INT NOT NULL,
+  message VARCHAR(1500) NULL COMMENT 'Optional note from passenger',
+  status VARCHAR(24) NOT NULL DEFAULT 'pending' COMMENT 'pending, approved, rejected',
+  admin_note VARCHAR(2000) NULL,
+  resolved_by_user_id INT NULL,
+  resolved_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_refund_ticket_status (ticket_id, status),
+  KEY idx_refund_passenger (passenger_user_id),
+  KEY idx_refund_status (status),
+  KEY idx_refund_created (created_at),
+  CONSTRAINT fk_refund_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE CASCADE,
+  CONSTRAINT fk_refund_passenger FOREIGN KEY (passenger_user_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_refund_resolver FOREIGN KEY (resolved_by_user_id) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
 -- Payments (base + Chapa from migration 001)
 -- ---------------------------------------------------------------------------
 CREATE TABLE payments (
   id INT AUTO_INCREMENT PRIMARY KEY,
   ticket_id INT NULL,
+  cargo_id INT NULL COMMENT 'Cargo fee payment when ticket_id is null',
   amount DECIMAL(10, 2) NOT NULL,
   method VARCHAR(64) NULL,
   transaction_ref VARCHAR(255) NULL,
@@ -215,6 +241,7 @@ CREATE TABLE payments (
   chapa_response JSON NULL,
   verification_attempts INT NOT NULL DEFAULT 0,
   KEY idx_payments_ticket (ticket_id),
+  KEY idx_payments_cargo (cargo_id),
   KEY idx_chapa_tx_ref (chapa_tx_ref),
   KEY idx_payment_method_type (payment_method_type),
   KEY idx_payment_verified (payment_verified),
@@ -225,6 +252,7 @@ CREATE TABLE payment_attempts (
   id INT AUTO_INCREMENT PRIMARY KEY,
   payment_id INT NULL,
   ticket_id INT NULL,
+  cargo_id INT NULL,
   user_id INT NOT NULL,
   amount DECIMAL(10, 2) NOT NULL,
   currency VARCHAR(3) NOT NULL DEFAULT 'ETB',
@@ -239,6 +267,7 @@ CREATE TABLE payment_attempts (
   UNIQUE KEY uk_payment_attempts_chapa_tx (chapa_tx_ref),
   KEY idx_payment_id (payment_id),
   KEY idx_ticket_id (ticket_id),
+  KEY idx_pa_cargo (cargo_id),
   KEY idx_user_id (user_id),
   KEY idx_status (status),
   CONSTRAINT fk_pa_payment FOREIGN KEY (payment_id) REFERENCES payments (id) ON DELETE SET NULL,
@@ -272,6 +301,7 @@ CREATE TABLE cargo (
   fee DECIMAL(12, 2) NOT NULL DEFAULT 0,
   tracking_code VARCHAR(64) NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  payment_status VARCHAR(32) NOT NULL DEFAULT 'pending' COMMENT 'Chapa cargo fee: pending, paid',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_cargo_owner (owner_id),
   KEY idx_cargo_trip (trip_id),
@@ -287,6 +317,13 @@ CREATE TABLE cargo_receipts (
   KEY idx_cargo_receipts_cargo (cargo_id),
   CONSTRAINT fk_cargo_receipts_cargo FOREIGN KEY (cargo_id) REFERENCES cargo (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Deferred FKs: payments / payment_attempts reference cargo (migration 007)
+ALTER TABLE payments
+  ADD CONSTRAINT fk_payments_cargo FOREIGN KEY (cargo_id) REFERENCES cargo (id) ON DELETE SET NULL;
+
+ALTER TABLE payment_attempts
+  ADD CONSTRAINT fk_pa_cargo FOREIGN KEY (cargo_id) REFERENCES cargo (id) ON DELETE SET NULL;
 
 -- ---------------------------------------------------------------------------
 -- Notifications, reports, login history
@@ -322,6 +359,20 @@ CREATE TABLE login_history (
   KEY idx_login_history_user (user_id),
   KEY idx_login_history_time (login_time),
   CONSTRAINT fk_login_history_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Support chat (migration 006)
+-- ---------------------------------------------------------------------------
+CREATE TABLE support_chat_messages (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  passenger_user_id INT NOT NULL,
+  from_user_id INT NOT NULL,
+  body VARCHAR(2000) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_support_thread (passenger_user_id, created_at),
+  CONSTRAINT fk_support_passenger FOREIGN KEY (passenger_user_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_support_from FOREIGN KEY (from_user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------

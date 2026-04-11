@@ -4,9 +4,14 @@ import * as tripModel from "../models/tripModel.js";
 import * as notificationModel from "../models/notificationModel.js";
 import { getUserWithRoleById } from "../models/userModel.js";
 import { sendSuccess, sendError } from "../utils/apiResponse.js";
-import { attachTicketQr, generateOneTimeTicketQr } from "../utils/ticketQr.js";
+import {
+  attachTicketQr,
+  generateOneTimeTicketQr,
+  normalizeValidateQrTokenInput,
+} from "../utils/ticketQr.js";
 import { isAdmin, isDriver, isPassenger } from "../constants/roles.js";
 import { logAutoReportTask } from "../utils/reportActivity.js";
+import { emitToUser } from "../realtime/socketServer.js";
 
 async function assertTicketUserIsPassenger(res, userId) {
   const rows = await getUserWithRoleById(Number(userId));
@@ -58,7 +63,22 @@ async function notifyDriverPassengerBooked(driverId, ticketRow, fallback, ticket
   }
   const msg = `New booking: ${passenger} took ${seatLabel} on ${route}${timePart}. Ticket #${ticketId}.`;
   try {
-    await notificationModel.createNotification(id, msg, "in_app", "pending");
+    const result = await notificationModel.createNotification(
+      id,
+      msg,
+      "in_app",
+      "pending"
+    );
+    const nid = result?.insertId;
+    if (nid) {
+      emitToUser(id, "notification:new", {
+        id: nid,
+        user_id: id,
+        message: msg,
+        channel: "in_app",
+        status: "pending",
+      });
+    }
   } catch (e) {
     console.error("notifyDriverPassengerBooked:", e);
   }
@@ -176,9 +196,13 @@ export const create = async (req, res) => {
       return sendSuccess(res, { message: "Ticket created", id: result.insertId }, 201);
     }
 
-    // Persist the QR token first, then render the image from stored data.
+    // Persist the same token that is encoded in the QR image (single-use on scan).
     const qrData = await generateOneTimeTicketQr(rows[0]);
-    await ticketModel.generateQrToken(result.insertId, qrData.expiresAt);
+    await ticketModel.setTicketQrCredentials(
+      result.insertId,
+      qrData.token,
+      qrData.expiresAt
+    );
     const updatedRows = await ticketModel.getTicketWithDetailsById(result.insertId);
     const ticket = await attachTicketQr(updatedRows[0], { includeImage: true });
 
@@ -343,35 +367,51 @@ export const remove = async (req, res) => {
 // QR Code specific endpoints
 export const validateQrCode = async (req, res) => {
   try {
-    const { token } = req.body;
-    
+    let token = req.body?.token;
+    if (token != null && typeof token !== "string") {
+      token = String(token);
+    }
+    token = normalizeValidateQrTokenInput(token?.trim() ?? "");
     if (!token) {
       return sendError(res, "QR token is required", 400);
     }
-    
+
     const ipAddress = req.ip || req.connection.remoteAddress;
     const userAgent = req.get('User-Agent');
     
-    // Validate token
-    const validation = await ticketModel.validateAndUseQrToken(token, ipAddress, userAgent);
-    
+    // Single atomic UPDATE: one successful scan marks used and expires token immediately
+    const validation = await ticketModel.consumeQrToken(
+      token,
+      ipAddress,
+      userAgent
+    );
+
     if (!validation.valid) {
-      // Log failed validation attempt
       const ticket = await ticketModel.getTicketByQrToken(token);
       if (ticket.length > 0) {
-        await ticketModel.logQrCodeUsage(ticket[0].id, token, ipAddress, userAgent, false, validation.reason);
+        await ticketModel.logQrCodeUsage(
+          ticket[0].id,
+          token,
+          ipAddress,
+          userAgent,
+          false,
+          validation.reason
+        );
       }
       return sendError(res, validation.reason, 400);
     }
-    
-    // Mark QR code as used
-    await ticketModel.markQrCodeAsUsed(validation.ticketId, ipAddress, userAgent);
-    
-    // Log successful usage
-    await ticketModel.logQrCodeUsage(validation.ticketId, token, ipAddress, userAgent, true);
-    
-    // Get ticket details
-    const ticket = await ticketModel.getTicketWithDetailsById(validation.ticketId);
+
+    await ticketModel.logQrCodeUsage(
+      validation.ticketId,
+      token,
+      ipAddress,
+      userAgent,
+      true
+    );
+
+    const ticket = await ticketModel.getTicketWithDetailsById(
+      validation.ticketId
+    );
     if (!ticket.length) {
       return sendError(res, "Ticket not found", 404);
     }
@@ -414,9 +454,8 @@ export const regenerateQrCode = async (req, res) => {
       return sendError(res, "Forbidden", 403);
     }
     
-    // Generate new QR token
     const qrData = await generateOneTimeTicketQr(existing[0]);
-    await ticketModel.generateQrToken(id, qrData.expiresAt);
+    await ticketModel.setTicketQrCredentials(id, qrData.token, qrData.expiresAt);
     
     // Get updated ticket with new QR
     const updatedTicket = await ticketModel.getTicketWithDetailsById(id);

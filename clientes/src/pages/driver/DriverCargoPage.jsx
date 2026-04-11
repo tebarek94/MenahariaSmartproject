@@ -4,6 +4,7 @@ import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { formatDate, formatMoney } from "@/utils/format.js";
+import { isCargoFeePaid } from "@/utils/cargoPayment.js";
 
 function normalizeList(data) {
   if (Array.isArray(data)) return data;
@@ -91,6 +92,7 @@ export function DriverCargoPage() {
                 <th className="px-2 py-2 font-semibold">Vehicle</th>
                 <th className="px-2 py-2 font-semibold">Weight</th>
                 <th className="px-2 py-2 font-semibold">Fee</th>
+                <th className="px-2 py-2 font-semibold">Fee paid</th>
                 <th className="px-2 py-2 font-semibold">Status</th>
                 <th className="px-2 py-2 font-semibold">Tracking</th>
               </tr>
@@ -99,7 +101,7 @@ export function DriverCargoPage() {
               {rows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="px-3 py-10 text-center text-slate-500 dark:text-slate-500"
                   >
                     No cargo on your assigned trips
@@ -129,6 +131,9 @@ export function DriverCargoPage() {
                     <td className="px-2 py-2 text-slate-700 dark:text-slate-300">{r.weight}</td>
                     <td className="whitespace-nowrap px-2 py-2 text-slate-700 dark:text-slate-300">
                       {formatMoney(r.fee)}
+                    </td>
+                    <td className="px-2 py-2 text-xs capitalize text-slate-700 dark:text-slate-300">
+                      {isCargoFeePaid(r.payment_status) ? "yes" : r.payment_status || "pending"}
                     </td>
                     <td className="px-2 py-2 capitalize text-slate-700 dark:text-slate-300">
                       {r.status || "—"}

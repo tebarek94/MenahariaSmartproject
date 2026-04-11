@@ -6,26 +6,7 @@ import { validateId } from "../middleware/validateId.js";
 
 const router = express.Router();
 
-// Webhook first — must not use JWT (Chapa server callback)
-router.post(
-  "/chapa/webhook",
-  express.raw({ type: "application/json" }),
-  (req, res, next) => {
-    try {
-      const raw = req.body;
-      const str = Buffer.isBuffer(raw)
-        ? raw.toString("utf8")
-        : typeof raw === "string"
-          ? raw
-          : JSON.stringify(raw ?? {});
-      req.body = JSON.parse(str);
-      next();
-    } catch (err) {
-      return res.status(400).json({ message: "Invalid JSON payload" });
-    }
-  },
-  paymentController.handleChapaWebhook
-);
+// Webhook is registered in index.js (before express.json) with raw body for signatures.
 
 router.use(verifyToken, attachRole);
 

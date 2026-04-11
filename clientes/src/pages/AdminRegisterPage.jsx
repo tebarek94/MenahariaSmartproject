@@ -66,13 +66,16 @@ export function AdminRegisterPage() {
 
   return (
     <AuthShell
+      backTo="/"
+      backLabel="← Menahariya Smart"
       eyebrow="Admin console"
-      title="Create account"
+      heroTitle="Create an operations account"
+      heroDescription="Register to configure the network: users, roles, routes, vehicles, seats, trips, and reports. After approval, sign in from this portal anytime."
+      panelTitle="Create account"
+      panelSubtitle="Use a valid Ethiopian phone number; you’ll sign in with it after registration."
       footer={
         <AuthFooterLinks
-          items={[
-            { to: ROUTES.ADMIN_LOGIN, label: "Sign in instead" },
-          ]}
+          items={[{ to: ROUTES.ADMIN_LOGIN, label: "Sign in instead" }]}
         />
       }
     >

@@ -130,12 +130,12 @@ Shows:
 - Configurable in QR generation options
 - Error correction level: "M" (medium)
 
-## Migration
+## Database
 
-Run the database migration to add new fields:
-```sql
--- Run migration file
-mysql -u root -p menahariya_smart < database/migrations/002_add_qr_code_expiration.sql
+QR columns on `tickets` and `qr_code_usage_logs` are created by the full schema import:
+
+```bash
+mysql -u root -p < database/menahariya_smart_full_schema.sql
 ```
 
 ## Testing

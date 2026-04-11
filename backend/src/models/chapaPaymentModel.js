@@ -17,17 +17,19 @@ export const createPaymentWithChapa = async (
     customerPhone,
     callbackUrl,
     returnUrl,
-    currency = 'ETB'
+    currency = "ETB",
+    cargoId,
   } = chapaData;
 
   return queryAsync(
     `INSERT INTO payments 
-     (ticket_id, amount, method, transaction_ref, status, paid_at, 
+     (ticket_id, cargo_id, amount, method, transaction_ref, status, paid_at, 
       chapa_tx_ref, chapa_checkout_url, customer_email, customer_phone, 
       callback_url, return_url, currency, payment_method_type)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       ticketId ?? null,
+      cargoId ?? null,
       amount,
       method,
       transactionRef ?? null,
@@ -40,7 +42,7 @@ export const createPaymentWithChapa = async (
       callbackUrl ?? null,
       returnUrl ?? null,
       currency,
-      'chapa'
+      "chapa",
     ]
   );
 };
@@ -78,9 +80,10 @@ export const getPaymentByChapaTxRef = (txRef) =>
 
 export const getPaymentByIdWithTicketUser = (id) =>
   queryAsync(
-    `SELECT p.*, t.user_id AS ticket_user_id
+    `SELECT p.*, t.user_id AS ticket_user_id, c.owner_id AS cargo_owner_id
      FROM payments p
      LEFT JOIN tickets t ON t.id = p.ticket_id
+     LEFT JOIN cargo c ON c.id = p.cargo_id
      WHERE p.id = ?`,
     [id]
   );
@@ -170,10 +173,11 @@ export const deletePayment = (id) =>
 export const getPaymentsForPassenger = (userId) =>
   queryAsync(
     `SELECT p.* FROM payments p
-     INNER JOIN tickets t ON t.id = p.ticket_id
-     WHERE t.user_id = ?
+     LEFT JOIN tickets t ON t.id = p.ticket_id
+     LEFT JOIN cargo c ON c.id = p.cargo_id
+     WHERE t.user_id = ? OR c.owner_id = ?
      ORDER BY p.id DESC`,
-    [userId]
+    [userId, userId]
   );
 
 // Payment attempts functions
@@ -183,23 +187,25 @@ export const createPaymentAttempt = async (
   userId,
   amount,
   chapaTxRef,
-  status = 'pending',
+  status = "pending",
   checkoutUrl = null,
-  chapaResponse = null
+  chapaResponse = null,
+  cargoId = null
 ) => {
   return queryAsync(
     `INSERT INTO payment_attempts 
-     (payment_id, ticket_id, user_id, amount, chapa_tx_ref, status, checkout_url, chapa_response)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+     (payment_id, ticket_id, cargo_id, user_id, amount, chapa_tx_ref, status, checkout_url, chapa_response)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       paymentId,
-      ticketId,
+      ticketId ?? null,
+      cargoId ?? null,
       userId,
       amount,
       chapaTxRef,
       status,
       checkoutUrl,
-      chapaResponse ? JSON.stringify(chapaResponse) : null
+      chapaResponse ? JSON.stringify(chapaResponse) : null,
     ]
   );
 };

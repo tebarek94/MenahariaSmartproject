@@ -195,13 +195,16 @@ export function AdminLoginPage() {
 
   return (
     <AuthShell
+      backTo="/"
+      backLabel="← Menahariya Smart"
       eyebrow="Admin console"
-      title="Sign in"
+      heroTitle="Fleet, finance, and passengers in one place"
+      heroDescription="Sign in to manage routes, vehicles, trips, tickets, Chapa payments, cargo, refunds, and support. Secure access for operations staff only."
+      panelTitle="Sign in"
+      panelSubtitle="Use the phone number and password issued to your admin account."
       footer={
         <AuthFooterLinks
-          items={[
-            { to: ROUTES.ADMIN_REGISTER, label: "Create account" },
-          ]}
+          items={[{ to: ROUTES.ADMIN_REGISTER, label: "Create admin account" }]}
         />
       }
     >

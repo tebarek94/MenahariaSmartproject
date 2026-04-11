@@ -222,18 +222,26 @@ export function PassengerBookPage() {
                   No free seats for this departure right now.
                 </p>
               ) : (
-                <div className="grid grid-cols-3 gap-2 min-[400px]:grid-cols-4 sm:grid-cols-5 md:grid-cols-6">
-                  {seats.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      disabled={bookingId != null}
-                      onClick={() => bookSeat(s)}
-                      className="rounded-lg border border-emerald-800/50 bg-emerald-950/30 px-2 py-3 text-center text-sm font-medium text-emerald-100 transition hover:bg-emerald-900/40 disabled:opacity-50"
-                    >
-                      {bookingId === s.id ? "…" : s.seat_number ?? s.id}
-                    </button>
-                  ))}
+                <div className="max-h-[min(55vh,26rem)] overflow-y-auto overscroll-contain pr-0.5">
+                  <div
+                    className="grid gap-1.5"
+                    style={{
+                      gridTemplateColumns:
+                        "repeat(auto-fill, minmax(2.4rem, 1fr))",
+                    }}
+                  >
+                    {seats.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        disabled={bookingId != null}
+                        onClick={() => bookSeat(s)}
+                        className="min-h-[2.25rem] rounded-md border border-emerald-800/50 bg-emerald-950/30 px-1 py-1.5 text-center text-xs font-medium tabular-nums text-emerald-100 transition hover:bg-emerald-900/40 disabled:opacity-50 sm:min-h-[2.5rem] sm:text-sm"
+                      >
+                        {bookingId === s.id ? "…" : s.seat_number ?? s.id}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </>

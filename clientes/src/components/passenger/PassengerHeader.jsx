@@ -64,8 +64,10 @@ const TITLES = {
   [ROUTES.PASSENGER_DASHBOARD]: "Dashboard",
   [ROUTES.PASSENGER_BOOK]: "Book a trip",
   [ROUTES.PASSENGER_TICKETS]: "My tickets",
+  [ROUTES.PASSENGER_REFUNDS]: "Refund requests",
   [ROUTES.PASSENGER_PROFILE]: "Profile",
   [ROUTES.PASSENGER_CARGO_TRACK]: "Track cargo",
+  [ROUTES.PASSENGER_SUPPORT]: "Support chat",
 };
 
 function titleForPath(pathname) {

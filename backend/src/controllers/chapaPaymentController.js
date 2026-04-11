@@ -4,7 +4,7 @@ import * as userModel from "../models/userModel.js";
 import { queryAsync } from "../config/db.js";
 import { sendSuccess, sendError } from "../utils/apiResponse.js";
 import { isAdmin, isPassenger } from "../constants/roles.js";
-import chapaService from "../services/chapaService.js";
+import chapaService, { flattenChapaApiMessage } from "../services/chapaService.js";
 
 async function ticketOwnedBy(ticketId, userId) {
   if (ticketId == null) return false;
@@ -18,16 +18,35 @@ async function ticketOwnedBy(ticketId, userId) {
 async function getTicketPrice(ticketId) {
   const ticket = await ticketModel.getTicketById(ticketId);
   if (!ticket.length) return null;
-  
-  const trip = await queryAsync("SELECT price FROM trips WHERE id = ?", [ticket[0].trip_id]);
+
+  const trip = await queryAsync("SELECT price FROM trips WHERE id = ?", [
+    ticket[0].trip_id,
+  ]);
   return trip.length ? trip[0].price : null;
 }
 
-// Initialize Chapa payment
+async function cargoOwnedBy(cargoId, userId) {
+  if (cargoId == null) return false;
+  const rows = await queryAsync("SELECT owner_id FROM cargo WHERE id = ?", [
+    cargoId,
+  ]);
+  return rows.length && Number(rows[0].owner_id) === Number(userId);
+}
+
+async function getCargoFeeRow(cargoId) {
+  const rows = await queryAsync(
+    "SELECT fee, payment_status FROM cargo WHERE id = ?",
+    [cargoId]
+  );
+  return rows.length ? rows[0] : null;
+}
+
+/** Initialize Chapa for a ticket **or** a cargo shipment (exactly one id in body). */
 export const initializeChapaPayment = async (req, res) => {
   try {
     let {
       ticket_id,
+      cargo_id,
       amount,
       email,
       first_name,
@@ -36,33 +55,68 @@ export const initializeChapaPayment = async (req, res) => {
       return_url: returnUrlBody,
     } = req.body;
 
-    if (!ticket_id || amount == null || amount === "") {
-      return sendError(res, "ticket_id and amount are required", 400);
+    const hasTicket = ticket_id != null && ticket_id !== "";
+    const hasCargo = cargo_id != null && cargo_id !== "";
+    if (hasTicket === hasCargo) {
+      return sendError(
+        res,
+        "Send exactly one of ticket_id or cargo_id together with amount",
+        400
+      );
+    }
+    if (amount == null || amount === "") {
+      return sendError(res, "amount is required", 400);
     }
 
     if (!isAdmin(req.roleName)) {
       if (!isPassenger(req.roleName)) {
         return sendError(res, "Forbidden", 403);
       }
-      const ok = await ticketOwnedBy(ticket_id, req.user.id);
-      if (!ok) return sendError(res, "Ticket not found or not yours", 403);
+      if (hasTicket) {
+        const ok = await ticketOwnedBy(ticket_id, req.user.id);
+        if (!ok) return sendError(res, "Ticket not found or not yours", 403);
+      } else {
+        const ok = await cargoOwnedBy(cargo_id, req.user.id);
+        if (!ok) return sendError(res, "Cargo not found or not yours", 403);
+      }
     }
 
-    const ticketPrice = await getTicketPrice(ticket_id);
-    if (ticketPrice == null) {
-      return sendError(res, "Ticket not found", 404);
-    }
-
-    const priceNum = Number(ticketPrice);
     const amtNum = Number(amount);
+    if (!Number.isFinite(amtNum) || amtNum <= 0) {
+      return sendError(res, "Invalid amount", 400);
+    }
+
+    let expectedPrice = null;
+    let ticketIdNum = null;
+    let cargoIdNum = null;
+
+    if (hasTicket) {
+      ticketIdNum = Number(ticket_id);
+      expectedPrice = await getTicketPrice(ticketIdNum);
+      if (expectedPrice == null) {
+        return sendError(res, "Ticket not found", 404);
+      }
+    } else {
+      cargoIdNum = Number(cargo_id);
+      const cargoRow = await getCargoFeeRow(cargoIdNum);
+      if (!cargoRow) {
+        return sendError(res, "Cargo not found", 404);
+      }
+      const ps = String(cargoRow.payment_status || "pending").toLowerCase();
+      if (ps === "paid" || ps === "completed") {
+        return sendError(res, "Cargo fee is already paid", 400);
+      }
+      expectedPrice = cargoRow.fee;
+    }
+
+    const priceNum = Number(expectedPrice);
     if (
       !Number.isFinite(priceNum) ||
-      !Number.isFinite(amtNum) ||
       Math.abs(priceNum - amtNum) > 0.009
     ) {
       return sendError(
         res,
-        `Amount must be ${priceNum.toFixed(2)} ETB (trip fare)`,
+        `Amount must be ${priceNum.toFixed(2)} ETB (${hasCargo ? "cargo fee" : "trip fare"})`,
         400
       );
     }
@@ -116,11 +170,23 @@ export const initializeChapaPayment = async (req, res) => {
       /\/$/,
       ""
     );
-    const defaultReturn = `${frontendBase}/passenger/tickets`;
+    const defaultReturn = hasCargo
+      ? `${frontendBase}/passenger/cargo/track`
+      : `${frontendBase}/passenger/tickets`;
     const returnUrlFinal =
       returnUrlBody && /^https?:\/\//i.test(String(returnUrlBody))
         ? String(returnUrlBody).slice(0, 500)
         : defaultReturn;
+
+    if (!chapaService.isApiKeyValid()) {
+      const specific = chapaService.getChapaDisabledReason();
+      return sendError(
+        res,
+        specific ||
+          "Chapa is not configured correctly. Set CHAPA_SECRET_KEY to your Chapa Secret Key (CHASECK_TEST… for coursework). Do not use the Public Key (CHAPUBK_) on the server.",
+        503
+      );
+    }
 
     const chapaResult = await chapaService.initializeTransaction({
       amount: amtNum,
@@ -128,18 +194,32 @@ export const initializeChapaPayment = async (req, res) => {
       firstName: first_name,
       lastName: last_name,
       phoneNumber: formattedPhone || undefined,
-      ticketId: ticket_id,
+      ticketId: hasTicket ? ticketIdNum : null,
+      cargoId: hasCargo ? cargoIdNum : null,
       userId: req.user.id,
       returnUrl: returnUrlFinal,
     });
 
     if (!chapaResult.success) {
-      return sendError(res, "Failed to initialize payment", 500, chapaResult.error);
+      const raw = chapaResult.error?.message;
+      const msg =
+        typeof raw === "string" && raw.trim()
+          ? raw.trim()
+          : typeof raw === "object" && raw
+            ? flattenChapaApiMessage(raw)
+            : typeof chapaResult.error === "string"
+              ? chapaResult.error
+              : "Failed to initialize payment";
+      return sendError(res, msg, 502, chapaResult.error);
     }
 
-    // Create payment record
+    const checkoutUrl = chapaResult.checkout_url;
+    const cbUrl =
+      process.env.CHAPA_CALLBACK_URL ||
+      `${(process.env.API_BASE_URL || "http://localhost:5000").replace(/\/$/, "")}/api/payments/chapa/callback`;
+
     const paymentResult = await paymentModel.createPaymentWithChapa(
-      ticket_id,
+      hasTicket ? ticketIdNum : null,
       amtNum,
       "chapa",
       chapaResult.txRef,
@@ -147,23 +227,25 @@ export const initializeChapaPayment = async (req, res) => {
       null,
       {
         chapaTxRef: chapaResult.txRef,
-        checkoutUrl: chapaResult.data.data.checkout_url,
+        checkoutUrl,
         customerEmail: email,
         customerPhone: formattedPhone,
+        callbackUrl: cbUrl,
         returnUrl: returnUrlFinal,
+        cargoId: hasCargo ? cargoIdNum : null,
       }
     );
 
-    // Create payment attempt record
     await paymentModel.createPaymentAttempt(
       paymentResult.insertId,
-      ticket_id,
+      hasTicket ? ticketIdNum : null,
       req.user.id,
       amtNum,
       chapaResult.txRef,
       "pending",
-      chapaResult.data.data.checkout_url,
-      chapaResult.data
+      checkoutUrl,
+      chapaResult.data,
+      hasCargo ? cargoIdNum : null
     );
 
     return sendSuccess(
@@ -172,15 +254,15 @@ export const initializeChapaPayment = async (req, res) => {
         message: "Payment initialized successfully",
         payment_id: paymentResult.insertId,
         tx_ref: chapaResult.txRef,
-        checkout_url: chapaResult.data.data.checkout_url,
+        checkout_url: checkoutUrl,
         amount: amtNum,
         currency: "ETB",
+        payment_for: hasCargo ? "cargo" : "ticket",
       },
       201
     );
-
   } catch (err) {
-    console.error('Chapa payment initialization error:', err);
+    console.error("Chapa payment initialization error:", err);
     return sendError(res, "Failed to initialize payment", 500, err);
   }
 };
@@ -209,55 +291,65 @@ export const verifyChapaPayment = async (req, res) => {
 
     // Verify with Chapa
     const verificationResult = await chapaService.verifyTransaction(tx_ref);
-    
+
     if (!verificationResult.success) {
-      // Update attempt with error
       await paymentModel.updatePaymentAttempt(tx_ref, {
-        status: 'failed',
-        errorMessage: JSON.stringify(verificationResult.error)
+        status: "failed",
+        errorMessage: JSON.stringify(verificationResult.error),
       });
-      return sendError(res, "Payment verification failed", 500, verificationResult.error);
+      return sendError(
+        res,
+        "Payment verification failed",
+        500,
+        verificationResult.error
+      );
     }
 
-    const chapaData = verificationResult.data.data;
-    const isSuccessful = chapaData.status === 'success';
+    const norm = verificationResult.normalized;
+    const isSuccessful = norm.status === "success";
+    const raw = norm.raw || {};
 
-    // Update payment attempt
     await paymentModel.updatePaymentAttempt(tx_ref, {
-      status: isSuccessful ? 'success' : 'failed',
-      verificationResponse: chapaData
+      status: isSuccessful ? "success" : "failed",
+      verificationResponse: verificationResult.data,
     });
 
-    // Update payment record if successful
     if (isSuccessful) {
       await paymentModel.updatePaymentWithChapa(attempt.payment_id, {
-        status: 'success',
+        status: "success",
         paidAt: new Date(),
-        chapaRefId: chapaData.id,
+        chapaRefId: norm.id,
         paymentVerified: true,
         paymentVerifiedAt: new Date(),
-        chapaResponse: chapaData,
-        verificationAttempts: (attempt.verification_attempts || 0) + 1
+        chapaResponse: raw,
+        verificationAttempts: (attempt.verification_attempts || 0) + 1,
       });
 
-      // Update ticket payment status
-      await queryAsync(
-        "UPDATE tickets SET payment_status = 'paid' WHERE id = ?",
-        [attempt.ticket_id]
-      );
+      if (attempt.ticket_id != null) {
+        await queryAsync(
+          "UPDATE tickets SET payment_status = 'paid' WHERE id = ?",
+          [attempt.ticket_id]
+        );
+      }
+      if (attempt.cargo_id != null) {
+        await queryAsync(
+          "UPDATE cargo SET payment_status = 'paid' WHERE id = ?",
+          [attempt.cargo_id]
+        );
+      }
     } else {
       await paymentModel.updatePaymentWithChapa(attempt.payment_id, {
-        status: 'failed',
-        verificationAttempts: (attempt.verification_attempts || 0) + 1
+        status: "failed",
+        verificationAttempts: (attempt.verification_attempts || 0) + 1,
       });
     }
 
     return sendSuccess(res, {
-      message: `Payment ${isSuccessful ? 'verified successfully' : 'verification failed'}`,
-      status: chapaData.status,
-      amount: parseFloat(chapaData.amount),
-      currency: chapaData.currency,
-      paid_at: chapaData.created_at
+      message: `Payment ${isSuccessful ? "verified successfully" : "verification failed"}`,
+      status: norm.status,
+      amount: norm.amount ?? parseFloat(raw.amount),
+      currency: norm.currency ?? raw.currency,
+      paid_at: raw.created_at ?? raw.updated_at,
     });
 
   } catch (err) {
@@ -266,69 +358,108 @@ export const verifyChapaPayment = async (req, res) => {
   }
 };
 
-// Chapa webhook handler
+// Chapa webhook handler (mounted in index.js with raw body → req.chapaRawBody)
 export const handleChapaWebhook = async (req, res) => {
   try {
-    const signature = req.headers['chapa-signature'];
-    const payload = JSON.stringify(req.body);
+    const rawUtf8 = Buffer.isBuffer(req.chapaRawBody)
+      ? req.chapaRawBody.toString("utf8")
+      : JSON.stringify(req.body ?? {});
 
-    // Validate webhook signature
-    if (!chapaService.validateWebhookSignature(payload, signature)) {
-      return sendError(res, "Invalid webhook signature", 401);
+    if (!chapaService.validateWebhookSignature(rawUtf8, req.headers)) {
+      return res.status(401).json({ message: "Invalid webhook signature" });
     }
 
     const webhookData = req.body;
     const processedData = chapaService.processWebhook(webhookData);
 
-    // Log webhook
-    await paymentModel.createWebhookLog(
-      processedData.txRef,
-      webhookData.event || 'payment_update',
-      webhookData
-    );
+    try {
+      await paymentModel.createWebhookLog(
+        processedData.txRef || "unknown",
+        webhookData.event || "payment_update",
+        webhookData
+      );
+    } catch (logErr) {
+      console.error("Chapa webhook log:", logErr);
+    }
 
-    // Find payment attempt
-    const paymentAttempts = await paymentModel.getPaymentAttemptByTxRef(processedData.txRef);
+    if (!processedData.txRef) {
+      return res.status(200).json({ ok: true, message: "No tx_ref in payload" });
+    }
+
+    const paymentAttempts = await paymentModel.getPaymentAttemptByTxRef(
+      processedData.txRef
+    );
     if (!paymentAttempts.length) {
-      return sendError(res, "Payment attempt not found", 404);
+      return res.status(200).json({ ok: true, message: "Unknown tx_ref (ignored)" });
     }
 
     const attempt = paymentAttempts[0];
-    const isSuccessful = processedData.status === 'success';
+    const webhookSaysSuccess = processedData.status === "success";
 
-    // Update payment attempt
-    await paymentModel.updatePaymentAttempt(processedData.txRef, {
-      status: isSuccessful ? 'success' : 'failed',
-      verificationResponse: webhookData
-    });
+    if (webhookSaysSuccess) {
+      const vr = await chapaService.verifyTransaction(processedData.txRef);
+      if (!vr.success || vr.normalized?.status !== "success") {
+        await paymentModel.updatePaymentAttempt(processedData.txRef, {
+          status: "pending",
+          verificationResponse: { webhook: webhookData, verify: vr },
+        });
+        return res.status(200).json({
+          ok: true,
+          message: "Webhook received; awaiting verification",
+        });
+      }
 
-    // Update payment record
-    if (isSuccessful) {
-      await paymentModel.updatePaymentWithChapa(attempt.payment_id, {
-        status: 'success',
-        paidAt: new Date(),
-        chapaRefId: processedData.refId,
-        paymentVerified: true,
-        paymentVerifiedAt: new Date(),
-        chapaResponse: webhookData
+      const norm = vr.normalized;
+      const raw = norm.raw || {};
+
+      await paymentModel.updatePaymentAttempt(processedData.txRef, {
+        status: "success",
+        verificationResponse: { webhook: webhookData, verify: vr.data },
       });
 
-      // Update ticket payment status
-      await queryAsync(
-        "UPDATE tickets SET payment_status = 'paid' WHERE id = ?",
-        [attempt.ticket_id]
-      );
-    } else {
       await paymentModel.updatePaymentWithChapa(attempt.payment_id, {
-        status: 'failed'
+        status: "success",
+        paidAt: new Date(),
+        chapaRefId: norm.id,
+        paymentVerified: true,
+        paymentVerifiedAt: new Date(),
+        chapaResponse: { webhook: webhookData, verified: raw },
+      });
+
+      if (attempt.ticket_id != null) {
+        await queryAsync(
+          "UPDATE tickets SET payment_status = 'paid' WHERE id = ?",
+          [attempt.ticket_id]
+        );
+      }
+      if (attempt.cargo_id != null) {
+        await queryAsync(
+          "UPDATE cargo SET payment_status = 'paid' WHERE id = ?",
+          [attempt.cargo_id]
+        );
+      }
+    } else if (
+      processedData.status === "failed" ||
+      processedData.status === "cancelled"
+    ) {
+      await paymentModel.updatePaymentAttempt(processedData.txRef, {
+        status: "failed",
+        verificationResponse: webhookData,
+      });
+      await paymentModel.updatePaymentWithChapa(attempt.payment_id, {
+        status: "failed",
+      });
+    } else {
+      await paymentModel.updatePaymentAttempt(processedData.txRef, {
+        status: "pending",
+        verificationResponse: webhookData,
       });
     }
 
-    return sendSuccess(res, { message: "Webhook processed successfully" });
-
+    return res.status(200).json({ ok: true, message: "Webhook processed" });
   } catch (err) {
-    console.error('Chapa webhook error:', err);
-    return sendError(res, "Failed to process webhook", 500, err);
+    console.error("Chapa webhook error:", err);
+    return res.status(500).json({ message: "Failed to process webhook" });
   }
 };
 
@@ -407,12 +538,15 @@ export const getById = async (req, res) => {
     if (isAdmin(req.roleName)) {
       return sendSuccess(res, rows[0]);
     }
-    if (
-      isPassenger(req.roleName) &&
-      rows[0].ticket_user_id != null &&
-      Number(rows[0].ticket_user_id) === Number(req.user.id)
-    ) {
-      return sendSuccess(res, rows[0]);
+    if (isPassenger(req.roleName)) {
+      const tid = rows[0].ticket_user_id;
+      if (tid != null && Number(tid) === Number(req.user.id)) {
+        return sendSuccess(res, rows[0]);
+      }
+      const cid = rows[0].cargo_owner_id;
+      if (cid != null && Number(cid) === Number(req.user.id)) {
+        return sendSuccess(res, rows[0]);
+      }
     }
     return sendError(res, "Forbidden", 403);
   } catch (err) {

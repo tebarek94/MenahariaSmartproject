@@ -1,6 +1,56 @@
 import QRCode from "qrcode";
 import crypto from "crypto";
 
+/** Public app URL for QR (camera opens browser here). Same env as Chapa return_url. */
+function resolveFrontendBase() {
+  return String(process.env.FRONTEND_URL || "http://localhost:5173").replace(
+    /\/$/,
+    ""
+  );
+}
+
+/**
+ * QR must encode this URL so scanners open the validation page, not raw JSON.
+ * Path: /qr-scan/:token (token = 64-char hex secret).
+ */
+export function buildTicketQrScanUrl(secretToken) {
+  const t = String(secretToken ?? "").trim();
+  if (!t) return "";
+  const base = resolveFrontendBase();
+  return `${base}/qr-scan/${encodeURIComponent(t)}`;
+}
+
+/**
+ * Accept raw URL, legacy JSON, or hex token from POST body (defense in depth).
+ */
+export function normalizeValidateQrTokenInput(input) {
+  let s = String(input ?? "").trim();
+  if (!s) return "";
+  try {
+    s = decodeURIComponent(s.replace(/\+/g, " "));
+  } catch {
+    /* keep */
+  }
+  const m = s.match(/\/qr-scan\/([^/?#]+)/i);
+  if (m) {
+    try {
+      return decodeURIComponent(m[1]).trim();
+    } catch {
+      return m[1].trim();
+    }
+  }
+  if (s.startsWith("{")) {
+    try {
+      const j = JSON.parse(s);
+      if (j && typeof j.token === "string") return j.token.trim();
+    } catch {
+      return "";
+    }
+    return "";
+  }
+  return s.trim();
+}
+
 export function buildTicketQrPayload(row) {
   return {
     ticket_id: row.id,
@@ -34,14 +84,8 @@ export async function generateOneTimeTicketQr(row, expirationHours = 24) {
   const token = generateQrToken();
   const expiresAt = generateQrExpirationTime(expirationHours);
   
-  const payload = {
-    token,
-    ticket_id: row.id,
-    type: 'ticket',
-    expires_at: expiresAt.toISOString(),
-  };
-  
-  const qrDataUrl = await QRCode.toDataURL(JSON.stringify(payload), {
+  const scanUrl = buildTicketQrScanUrl(token);
+  const qrDataUrl = await QRCode.toDataURL(scanUrl, {
     width: 280,
     margin: 2,
     errorCorrectionLevel: "M",
@@ -56,9 +100,15 @@ export async function generateOneTimeTicketQr(row, expirationHours = 24) {
 
 // Legacy function for backward compatibility
 export async function ticketToQrDataUrl(row) {
+  if (row?.qr_code_token) {
+    return QRCode.toDataURL(buildTicketQrScanUrl(row.qr_code_token), {
+      width: 280,
+      margin: 2,
+      errorCorrectionLevel: "M",
+    });
+  }
   const payload = buildTicketQrPayload(row);
-  const text = JSON.stringify(payload);
-  return QRCode.toDataURL(text, {
+  return QRCode.toDataURL(JSON.stringify(payload), {
     width: 280,
     margin: 2,
     errorCorrectionLevel: "M",
@@ -83,14 +133,8 @@ export async function attachTicketQr(row, { includeImage = true, generateNewToke
         errorCorrectionLevel: "M",
       });
     } else if (row.qr_code_token) {
-      // Generate QR with existing token
-      const payload = {
-        token: row.qr_code_token,
-        ticket_id: row.id,
-        type: 'ticket',
-        expires_at: row.qr_code_expires_at,
-      };
-      out.qr_data_url = await QRCode.toDataURL(JSON.stringify(payload), {
+      const scanUrl = buildTicketQrScanUrl(row.qr_code_token);
+      out.qr_data_url = await QRCode.toDataURL(scanUrl, {
         width: 280,
         margin: 2,
         errorCorrectionLevel: "M",

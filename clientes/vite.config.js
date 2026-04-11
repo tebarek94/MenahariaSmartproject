@@ -14,6 +14,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // REST only; Socket.IO uses `API_BASE` (dev default http://localhost:5000) to avoid ws proxy errors.
     proxy: {
       "/api": {
         target: "http://localhost:5000",

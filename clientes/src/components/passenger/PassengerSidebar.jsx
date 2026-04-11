@@ -9,7 +9,9 @@ const NAV_SECTIONS = [
       { to: ROUTES.PASSENGER_DASHBOARD, label: "Dashboard", end: true },
       { to: ROUTES.PASSENGER_BOOK, label: "Book a trip", end: true },
       { to: ROUTES.PASSENGER_TICKETS, label: "My tickets", end: true },
+      { to: ROUTES.PASSENGER_REFUNDS, label: "Refund requests", end: true },
       { to: ROUTES.PASSENGER_CARGO_TRACK, label: "Track cargo", end: true },
+      { to: ROUTES.PASSENGER_SUPPORT, label: "Support chat", end: true },
     ],
   },
 ];

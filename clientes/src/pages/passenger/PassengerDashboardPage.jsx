@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth.js";
 import { cargoService } from "@/services/cargo.service.js";
 import { cargoReceiptsService } from "@/services/cargoReceipts.service.js";
+import { paymentService } from "@/services/payment.service.js";
 import { ticketsService } from "@/services/tickets.service.js";
 import { profileService } from "@/services/profile.service.js";
 import { tripsService } from "@/services/trips.service.js";
@@ -11,7 +11,12 @@ import { Button } from "@/ui/Button.jsx";
 import { Input } from "@/ui/Input.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { ConfirmModal } from "@/components/ConfirmModal.jsx";
-import { ROUTES } from "@/utils/constants.js";
+import { ROUTES, STORAGE_KEYS } from "@/utils/constants.js";
+import {
+  interpretCargoChapaVerify,
+  isCargoFeePaid,
+  parseCargoFeeForChapa,
+} from "@/utils/cargoPayment.js";
 import { formatDate, formatMoney } from "@/utils/format.js";
 
 function normalizeList(x) {
@@ -66,6 +71,7 @@ export function PassengerDashboardPage() {
 
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [payingCargoId, setPayingCargoId] = useState(null);
 
   const loadAll = useCallback(async (opts = { quiet: false }) => {
     setError("");
@@ -92,6 +98,39 @@ export function PassengerDashboardPage() {
 
   useEffect(() => {
     loadAll();
+  }, [loadAll]);
+
+  useEffect(() => {
+    const pending = sessionStorage.getItem(STORAGE_KEYS.CHAPA_PENDING_CARGO_TX_REF);
+    if (!pending) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await paymentService.chapaVerify(pending);
+        if (cancelled) return;
+        const outcome = interpretCargoChapaVerify(data, null);
+        if (outcome.clearPending) {
+          sessionStorage.removeItem(STORAGE_KEYS.CHAPA_PENDING_CARGO_TX_REF);
+        }
+        if (outcome.success) {
+          await loadAll({ quiet: true });
+          setCargoNotice("Cargo fee payment confirmed.");
+        }
+      } catch (err) {
+        if (cancelled) return;
+        const outcome = interpretCargoChapaVerify(null, err);
+        if (outcome.clearPending) {
+          sessionStorage.removeItem(STORAGE_KEYS.CHAPA_PENDING_CARGO_TX_REF);
+        }
+        if (outcome.userMessage) {
+          setCargoNotice(outcome.userMessage);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [loadAll]);
 
   useEffect(() => {
@@ -202,7 +241,7 @@ export function PassengerDashboardPage() {
   }
 
   function openEdit(c) {
-    if (!isPendingCargo(c)) return;
+    if (!isPendingCargo(c) || isCargoFeePaid(c.payment_status)) return;
     setEditError("");
     setEditing({
       id: c.id,
@@ -251,6 +290,41 @@ export function PassengerDashboardPage() {
     }
   }
 
+  async function handlePayCargoChapa(c) {
+    const amt = parseCargoFeeForChapa(c.fee);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setError("Cargo fee is missing; contact support.");
+      return;
+    }
+    if (isCargoFeePaid(c.payment_status)) {
+      setCargoNotice("This shipment is already paid.");
+      setTimeout(() => setCargoNotice(""), 4000);
+      return;
+    }
+    setPayingCargoId(c.id);
+    setError("");
+    try {
+      const returnUrl = `${window.location.origin}${ROUTES.PASSENGER_CARGO_TRACK}`;
+      const data = await paymentService.chapaInitialize({
+        cargo_id: c.id,
+        amount: amt,
+        return_url: returnUrl,
+      });
+      const checkoutUrl = data?.checkout_url;
+      const txRef = data?.tx_ref;
+      if (!checkoutUrl || !txRef) {
+        setError("Invalid payment response from server");
+        return;
+      }
+      sessionStorage.setItem(STORAGE_KEYS.CHAPA_PENDING_CARGO_TX_REF, txRef);
+      window.location.assign(checkoutUrl);
+    } catch (err) {
+      setError(err?.data?.message || err?.message || "Could not start payment");
+    } finally {
+      setPayingCargoId(null);
+    }
+  }
+
   async function confirmDelete() {
     if (deleteTarget == null) return;
     setDeleteBusy(true);
@@ -278,52 +352,21 @@ export function PassengerDashboardPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-p-heading text-2xl font-bold md:text-3xl">
-            Passenger dashboard
-          </h1>
-          <p className="text-p-muted mt-1">
-            Welcome back,{" "}
-            <span className="text-p-body font-medium">{displayName}</span>. Status
-            below
-            refreshes automatically.
+      <div>
+        <h1 className="text-p-heading text-2xl font-bold md:text-3xl">
+          Passenger dashboard
+        </h1>
+        <p className="text-p-muted mt-1">
+          Welcome back,{" "}
+          <span className="text-p-body font-medium">{displayName}</span>. Status
+          below refreshes automatically.
+        </p>
+        {lastSync ? (
+          <p className="mt-2 text-xs text-slate-500">
+            Last updated {lastSync.toLocaleString()} · every {POLL_MS / 1000}s
+            + when you return to this tab
           </p>
-          {lastSync ? (
-            <p className="mt-2 text-xs text-slate-500">
-              Last updated {lastSync.toLocaleString()} · every {POLL_MS / 1000}s
-              + when you return to this tab
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="ghost"
-            className="!text-xs"
-            type="button"
-            onClick={() => loadAll({ quiet: true })}
-          >
-            Refresh now
-          </Button>
-          <Link to={ROUTES.PASSENGER_BOOK}>
-            <Button className="!text-xs">Book a trip</Button>
-          </Link>
-          <Link to={ROUTES.PASSENGER_TICKETS}>
-            <Button variant="secondary" className="!text-xs">
-              My tickets
-            </Button>
-          </Link>
-          <Link to={ROUTES.PASSENGER_CARGO_TRACK}>
-            <Button variant="ghost" className="!text-xs">
-              Track cargo
-            </Button>
-          </Link>
-          <Link to={ROUTES.PASSENGER_PROFILE}>
-            <Button variant="ghost" className="!text-xs">
-              Profile
-            </Button>
-          </Link>
-        </div>
+        ) : null}
       </div>
 
       {error ? (
@@ -497,6 +540,7 @@ export function PassengerDashboardPage() {
                   <th className="pb-2 pr-3 font-medium">Departure</th>
                   <th className="pb-2 pr-3 font-medium">Weight</th>
                   <th className="pb-2 pr-3 font-medium">Fee</th>
+                  <th className="pb-2 pr-3 font-medium">Fee pay</th>
                   <th className="pb-2 pr-3 font-medium">Tracking</th>
                   <th className="pb-2 pr-3 font-medium">Status</th>
                   <th className="pb-2 font-medium">Actions</th>
@@ -519,6 +563,24 @@ export function PassengerDashboardPage() {
                       {c.weight != null ? `${c.weight} kg` : "—"}
                     </td>
                     <td className="py-3 pr-3">{formatMoney(c.fee)}</td>
+                    <td className="py-3 pr-3">
+                      <span
+                        className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${statusTone(c.payment_status)}`}
+                      >
+                        {c.payment_status ?? "pending"}
+                      </span>
+                      {!isCargoFeePaid(c.payment_status) ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="mt-1 !block !px-2 !py-1 !text-xs"
+                          disabled={payingCargoId === c.id}
+                          onClick={() => handlePayCargoChapa(c)}
+                        >
+                          {payingCargoId === c.id ? "Opening…" : "Pay with Chapa"}
+                        </Button>
+                      ) : null}
+                    </td>
                     <td className="py-3 pr-3 font-mono text-xs">
                       {c.tracking_code || "—"}
                     </td>
@@ -532,24 +594,30 @@ export function PassengerDashboardPage() {
                     <td className="py-3">
                       <div className="flex flex-wrap gap-2">
                         {isPendingCargo(c) ? (
-                          <>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              className="!px-2 !py-1 !text-xs"
-                              onClick={() => openEdit(c)}
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              className="!px-2 !py-1 !text-xs text-red-300 hover:text-red-200"
-                              onClick={() => setDeleteTarget(c.id)}
-                            >
-                              Cancel
-                            </Button>
-                          </>
+                          !isCargoFeePaid(c.payment_status) ? (
+                            <>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                className="!px-2 !py-1 !text-xs"
+                                onClick={() => openEdit(c)}
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                className="!px-2 !py-1 !text-xs text-red-300 hover:text-red-200"
+                                onClick={() => setDeleteTarget(c.id)}
+                              >
+                                Cancel
+                              </Button>
+                            </>
+                          ) : (
+                            <span className="text-xs text-slate-500">
+                              Locked after fee payment
+                            </span>
+                          )
                         ) : (
                           <span className="text-xs text-slate-500">—</span>
                         )}

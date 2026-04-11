@@ -102,6 +102,15 @@ export const updateUserAsync = (
 export const deleteUserAsync = (id) =>
   queryAsync("DELETE FROM users WHERE id = ?", [id]);
 
+/** Active users with admin role (for broadcast notifications). */
+export const listAdminUsers = () =>
+  queryAsync(
+    `SELECT u.id FROM users u
+     INNER JOIN roles r ON r.id = u.role_id
+     WHERE LOWER(TRIM(r.name)) = 'admin'
+       AND (u.status IS NULL OR LOWER(TRIM(u.status)) = 'active')`
+  );
+
 const userModel = {
   createUser,
   findByPhone,

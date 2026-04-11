@@ -9,13 +9,17 @@ export { DriverTripsPage } from "./driver/DriverTripsPage.jsx";
 export { DriverPassengersPage } from "./driver/DriverPassengersPage.jsx";
 export { DriverCargoPage } from "./driver/DriverCargoPage.jsx";
 export { DriverNotificationsPage } from "./driver/DriverNotificationsPage.jsx";
-export { UserTicketsPage } from "./UserTicketsPage.jsx";
-export { PassengerLandingPage } from "./PassengerLandingPage.jsx";
-export { PassengerRegisterPage } from "./PassengerRegisterPage.jsx";
-export { PassengerDashboardPage } from "./PassengerDashboardPage.jsx";
-export { PassengerBookPage } from "./PassengerBookPage.jsx";
-export { PassengerProfilePage } from "./PassengerProfilePage.jsx";
-export { PassengerCargoTrackPage } from "./PassengerCargoTrackPage.jsx";
+export {
+  PassengerLandingPage,
+  PassengerRegisterPage,
+  PassengerDashboardPage,
+  PassengerBookPage,
+  PassengerProfilePage,
+  PassengerCargoTrackPage,
+  PassengerRefundRequestsPage,
+  PassengerSupportChatPage,
+  UserTicketsPage,
+} from "./passenger/index.js";
 export { NotFoundPage } from "./NotFoundPage.jsx";
 export { default as QRScanPage } from "./QRScanPage.jsx";
 
@@ -25,6 +29,7 @@ export {
   AdminPermissionsPage,
   AdminRolePermissionsPage,
   AdminTicketsPage,
+  AdminRefundRequestsPage,
   AdminVehiclesPage,
   AdminRoutesPage,
   AdminTripsPage,
@@ -34,6 +39,7 @@ export {
   AdminCargoReceiptsPage,
   AdminLoginHistoryPage,
   AdminNotificationsPage,
+  AdminSupportChatPage,
   AdminReportsPage,
   AdminRelationsOverviewPage,
   AdminProfilePage,
