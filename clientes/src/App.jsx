@@ -19,6 +19,7 @@ import {
   DriverPassengersPage,
   DriverCargoPage,
   DriverNotificationsPage,
+  DriverLiveGpsPage,
   UserTicketsPage,
   PassengerLandingPage,
   PassengerRegisterPage,
@@ -49,6 +50,7 @@ import {
   AdminReportsPage,
   AdminRelationsOverviewPage,
   AdminProfilePage,
+  AdminLiveGpsPage,
 } from "@/pages/index.js";
 import { ROUTES } from "@/utils/constants.js";
 import { ThemeProvider } from "@/contexts/ThemeContext.jsx";
@@ -124,6 +126,7 @@ export default function App() {
               path={ROUTES.DRIVER_NOTIFICATIONS}
               element={<DriverNotificationsPage />}
             />
+            <Route path={ROUTES.DRIVER_LIVE_GPS} element={<DriverLiveGpsPage />} />
             <Route path={ROUTES.DRIVER_PROFILE} element={<DriverProfilePage />} />
           </Route>
         </Route>
@@ -163,6 +166,7 @@ export default function App() {
         <Route element={<RequireAdmin />}>
           <Route element={<AdminLayout />}>
             <Route path={ROUTES.DASHBOARD} element={<DashboardPage />} />
+            <Route path={ROUTES.ADMIN_LIVE_GPS} element={<AdminLiveGpsPage />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
             <Route path="/admin/roles" element={<AdminRolesPage />} />
             <Route

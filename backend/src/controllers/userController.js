@@ -12,6 +12,15 @@ import { sendSuccess, sendError } from "../utils/apiResponse.js";
 import { isAdmin } from "../constants/roles.js";
 import { logAutoReportTask } from "../utils/reportActivity.js";
 
+function stripUserSecrets(row) {
+  if (!row || typeof row !== "object") return row;
+  const { password_hash, two_factor_secret, ...rest } = row;
+  if ("two_factor_enabled" in rest) {
+    rest.two_factor_enabled = Boolean(Number(rest.two_factor_enabled ?? 0));
+  }
+  return rest;
+}
+
 export const create = async (req, res) => {
   try {
     if (!isAdmin(req.roleName)) {
@@ -47,7 +56,7 @@ export const getAll = async (req, res) => {
       return sendError(res, "Admin access required", 403);
     }
     const rows = await getAllUsersAsync();
-    return sendSuccess(res, rows);
+    return sendSuccess(res, rows.map(stripUserSecrets));
   } catch (err) {
     return sendError(res, "Failed to list users", 500, err);
   }
@@ -60,7 +69,7 @@ export const listPassengers = async (req, res) => {
       return sendError(res, "Admin access required", 403);
     }
     const rows = await getPassengerUsersAsync();
-    return sendSuccess(res, rows);
+    return sendSuccess(res, rows.map(stripUserSecrets));
   } catch (err) {
     return sendError(res, "Failed to list passengers", 500, err);
   }
@@ -74,9 +83,7 @@ export const getById = async (req, res) => {
     }
     const rows = await getUserByIdAsync(req.params.id);
     if (!rows.length) return sendError(res, "User not found", 404);
-    const u = rows[0];
-    const { password_hash, ...safe } = u;
-    return sendSuccess(res, safe);
+    return sendSuccess(res, stripUserSecrets(rows[0]));
   } catch (err) {
     return sendError(res, "Failed to get user", 500, err);
   }

@@ -21,6 +21,12 @@ export function LandingLayout({ children }) {
               Trips
             </a>
             <a
+              href="#whats-new"
+              className="whitespace-nowrap text-xs text-slate-400 hover:text-white sm:text-sm"
+            >
+              What&apos;s new
+            </a>
+            <a
               href="#features"
               className="whitespace-nowrap text-xs text-slate-400 hover:text-white sm:text-sm"
             >
@@ -86,6 +92,14 @@ export function LandingLayout({ children }) {
                 </li>
                 <li>
                   <a
+                    href="#whats-new"
+                    className="text-slate-300 transition hover:text-emerald-400"
+                  >
+                    What&apos;s new
+                  </a>
+                </li>
+                <li>
+                  <a
                     href="#features"
                     className="text-slate-300 transition hover:text-emerald-400"
                   >
@@ -102,7 +116,8 @@ export function LandingLayout({ children }) {
                 <li>Seat booking &amp; pricing</li>
                 <li>Chapa payments</li>
                 <li>Digital tickets &amp; QR</li>
-                <li>Cargo on trips</li>
+                <li>Cargo on trips &amp; live map</li>
+                <li>Email OTP signup &amp; optional 2FA</li>
               </ul>
             </div>
           </div>

@@ -3,6 +3,7 @@ import { useAsync } from "@/hooks/useAsync.js";
 import { useAuth } from "@/hooks/useAuth.js";
 import { profileService } from "@/services/profile.service.js";
 import { ProfileForm } from "@/components/ProfileForm.jsx";
+import { TwoFactorProfileSection } from "@/components/profile/TwoFactorProfileSection.jsx";
 import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
@@ -63,6 +64,18 @@ export function DriverProfilePage() {
     }
   };
 
+  const refreshSessionUser = async () => {
+    const fresh = await profileService.getProfile();
+    const merged = mergeStoredUser(auth.user, fresh);
+    try {
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(merged));
+      window.dispatchEvent(new Event(AUTH_LOCAL_SYNC_EVENT));
+    } catch {
+      // no-op
+    }
+    await profileData.run();
+  };
+
   if (profileData.loading && !profileData.data) {
     return (
       <div className="flex justify-center py-20">
@@ -109,6 +122,8 @@ export function DriverProfilePage() {
         error={error}
         hideAccountDeletion
       />
+
+      <TwoFactorProfileSection user={profileUser} onChanged={refreshSessionUser} />
 
       <Card title="Account" subtitle="Driver portal">
         <div className="grid gap-3 text-sm sm:grid-cols-2">

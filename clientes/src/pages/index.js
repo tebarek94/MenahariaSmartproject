@@ -9,6 +9,7 @@ export { DriverTripsPage } from "./driver/DriverTripsPage.jsx";
 export { DriverPassengersPage } from "./driver/DriverPassengersPage.jsx";
 export { DriverCargoPage } from "./driver/DriverCargoPage.jsx";
 export { DriverNotificationsPage } from "./driver/DriverNotificationsPage.jsx";
+export { DriverLiveGpsPage } from "./driver/DriverLiveGpsPage.jsx";
 export {
   PassengerLandingPage,
   PassengerRegisterPage,
@@ -43,4 +44,5 @@ export {
   AdminReportsPage,
   AdminRelationsOverviewPage,
   AdminProfilePage,
+  AdminLiveGpsPage,
 } from "./admin/index.js";

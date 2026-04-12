@@ -6,6 +6,7 @@ import helmet from "helmet";
 
 import "./src/config/db.js";
 import { errorHandler } from "./src/middleware/errorHandler.js";
+import { apiNotFoundHandler } from "./src/middleware/apiNotFoundHandler.js";
 
 import authRoutes from "./src/routes/authRoutes.js";
 import userRoutes from "./src/routes/userRoutes.js";
@@ -107,6 +108,7 @@ app.use(`${API}/refund-requests`, refundRequestRoutes);
 app.use(`${API}/reports`, reportRoutes);
 app.use(`${API}/views`, viewRoutes);
 
+app.use(apiNotFoundHandler);
 app.use(errorHandler);
 
 const httpServer = http.createServer(app);

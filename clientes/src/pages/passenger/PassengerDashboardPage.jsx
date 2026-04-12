@@ -11,6 +11,7 @@ import { Button } from "@/ui/Button.jsx";
 import { Input } from "@/ui/Input.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { ConfirmModal } from "@/components/ConfirmModal.jsx";
+import { PassengerCargoGpsMap } from "@/components/maps/PassengerCargoGpsMap.jsx";
 import { ROUTES, STORAGE_KEYS } from "@/utils/constants.js";
 import {
   interpretCargoChapaVerify,
@@ -351,18 +352,18 @@ export function PassengerDashboardPage() {
   }
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-p-heading text-2xl font-bold md:text-3xl">
+    <div className="w-full min-w-0 space-y-6 sm:space-y-8">
+      <div className="min-w-0">
+        <h1 className="text-p-heading text-xl font-bold tracking-tight sm:text-2xl md:text-3xl">
           Passenger dashboard
         </h1>
-        <p className="text-p-muted mt-1">
+        <p className="text-p-muted mt-1 text-sm sm:text-base">
           Welcome back,{" "}
-          <span className="text-p-body font-medium">{displayName}</span>. Status
-          below refreshes automatically.
+          <span className="text-p-body font-medium break-words">{displayName}</span>.
+          Status below refreshes automatically.
         </p>
         {lastSync ? (
-          <p className="mt-2 text-xs text-slate-500">
+          <p className="mt-2 break-words text-xs leading-relaxed text-slate-500">
             Last updated {lastSync.toLocaleString()} · every {POLL_MS / 1000}s
             + when you return to this tab
           </p>
@@ -381,8 +382,8 @@ export function PassengerDashboardPage() {
         </p>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="!p-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
+        <Card className="!p-4 sm:!p-5">
           <p className="text-xs uppercase tracking-wide text-slate-500">
             Account
           </p>
@@ -391,7 +392,7 @@ export function PassengerDashboardPage() {
           </p>
           <p className="text-xs text-slate-500">Profile status in the system</p>
         </Card>
-        <Card className="!p-4">
+        <Card className="!p-4 sm:!p-5">
           <p className="text-xs uppercase tracking-wide text-slate-500">
             Active tickets
           </p>
@@ -400,7 +401,7 @@ export function PassengerDashboardPage() {
           </p>
           <p className="text-xs text-slate-500">confirmed / reserved / pending</p>
         </Card>
-        <Card className="!p-4">
+        <Card className="!p-4 sm:!p-5">
           <p className="text-xs uppercase tracking-wide text-slate-500">
             Payment pending
           </p>
@@ -409,7 +410,7 @@ export function PassengerDashboardPage() {
           </p>
           <p className="text-xs text-slate-500">tickets awaiting payment</p>
         </Card>
-        <Card className="!p-4">
+        <Card className="!p-4 sm:!p-5">
           <p className="text-xs uppercase tracking-wide text-slate-500">
             Cargo
           </p>
@@ -423,8 +424,14 @@ export function PassengerDashboardPage() {
         </Card>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-2">
-        <Card title="Recent tickets" subtitle="Status at a glance">
+      <PassengerCargoGpsMap cargo={cargo} />
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:gap-8">
+        <Card
+          className="!p-4 sm:!p-6"
+          title="Recent tickets"
+          subtitle="Status at a glance"
+        >
           {recentTickets.length === 0 ? (
             <p className="text-sm text-slate-500">No tickets yet.</p>
           ) : (
@@ -432,17 +439,17 @@ export function PassengerDashboardPage() {
               {recentTickets.map((t) => (
                 <li
                   key={t.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/5 bg-slate-900/50 px-3 py-2"
+                  className="flex flex-col gap-2 rounded-lg border border-white/5 bg-slate-900/50 px-3 py-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
                 >
-                  <div>
-                    <p className="text-p-heading font-medium">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-p-heading break-words font-medium leading-snug">
                       #{t.id} · {t.origin} → {t.destination}
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="mt-0.5 text-xs text-slate-500">
                       {formatDate(t.departure_time)} · seat {t.seat_id ?? "—"}
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex shrink-0 flex-wrap gap-1">
                     <span
                       className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${statusTone(t.status)}`}
                     >
@@ -461,16 +468,17 @@ export function PassengerDashboardPage() {
         </Card>
 
         <Card
+          className="!p-4 sm:!p-6"
           title="Book cargo"
           subtitle="Attach shipment to a scheduled trip (fee is calculated from weight)"
         >
           <form onSubmit={handleCreateCargo} className="space-y-4">
-            <div>
+            <div className="min-w-0">
               <label className="text-p-muted mb-1.5 block text-sm font-medium">
                 Trip
               </label>
               <select
-                className="ui-field w-full"
+                className="ui-field w-full max-w-full truncate text-sm sm:text-base"
                 value={newTripId}
                 onChange={(e) => setNewTripId(e.target.value)}
                 required
@@ -523,6 +531,7 @@ export function PassengerDashboardPage() {
       </div>
 
       <Card
+        className="!p-4 sm:!p-6"
         title="Your cargo"
         subtitle="Pending shipments can be edited or cancelled. Other statuses are managed by staff."
       >
@@ -531,107 +540,201 @@ export function PassengerDashboardPage() {
             No cargo yet. Use &quot;Book cargo&quot; above to add one.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-primary-200 text-xs uppercase text-slate-500 dark:border-white/10">
-                  <th className="pb-2 pr-3 font-medium">ID</th>
-                  <th className="pb-2 pr-3 font-medium">Route</th>
-                  <th className="pb-2 pr-3 font-medium">Departure</th>
-                  <th className="pb-2 pr-3 font-medium">Weight</th>
-                  <th className="pb-2 pr-3 font-medium">Fee</th>
-                  <th className="pb-2 pr-3 font-medium">Fee pay</th>
-                  <th className="pb-2 pr-3 font-medium">Tracking</th>
-                  <th className="pb-2 pr-3 font-medium">Status</th>
-                  <th className="pb-2 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cargo.map((c) => (
-                  <tr
-                    key={c.id}
-                    className="text-p-body border-b border-primary-100 last:border-0 dark:border-white/5"
-                  >
-                    <td className="py-3 pr-3 font-mono text-xs">#{c.id}</td>
-                    <td className="py-3 pr-3">
-                      {(c.route_origin ?? "—") + " → " + (c.route_destination ?? "—")}
-                    </td>
-                    <td className="text-p-muted py-3 pr-3 text-xs">
-                      {formatDate(c.trip_departure_time)}
-                    </td>
-                    <td className="py-3 pr-3">
-                      {c.weight != null ? `${c.weight} kg` : "—"}
-                    </td>
-                    <td className="py-3 pr-3">{formatMoney(c.fee)}</td>
-                    <td className="py-3 pr-3">
-                      <span
-                        className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${statusTone(c.payment_status)}`}
+          <>
+            <ul className="space-y-3 md:hidden">
+              {cargo.map((c) => (
+                <li
+                  key={c.id}
+                  className="rounded-xl border border-white/10 bg-slate-900/40 p-3.5 shadow-sm"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2 border-b border-white/5 pb-2">
+                    <span className="font-mono text-xs text-slate-400">#{c.id}</span>
+                    <span
+                      className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${statusTone(c.status)}`}
+                    >
+                      {c.status ?? "—"}
+                    </span>
+                  </div>
+                  <p className="mt-2 break-words text-sm font-medium leading-snug">
+                    {(c.route_origin ?? "—")} → {(c.route_destination ?? "—")}
+                  </p>
+                  <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs sm:grid-cols-3">
+                    <div>
+                      <dt className="text-slate-500">Departure</dt>
+                      <dd className="text-p-body">{formatDate(c.trip_departure_time)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-500">Weight</dt>
+                      <dd className="text-p-body">
+                        {c.weight != null ? `${c.weight} kg` : "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-500">Fee</dt>
+                      <dd className="text-p-body">{formatMoney(c.fee)}</dd>
+                    </div>
+                    <div className="col-span-2 sm:col-span-1">
+                      <dt className="text-slate-500">Tracking</dt>
+                      <dd className="break-all font-mono text-p-body">
+                        {c.tracking_code || "—"}
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span
+                      className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${statusTone(c.payment_status)}`}
+                    >
+                      Pay: {c.payment_status ?? "pending"}
+                    </span>
+                    {!isCargoFeePaid(c.payment_status) ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="!px-2 !py-1 !text-xs"
+                        disabled={payingCargoId === c.id}
+                        onClick={() => handlePayCargoChapa(c)}
                       >
-                        {c.payment_status ?? "pending"}
-                      </span>
-                      {!isCargoFeePaid(c.payment_status) ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="mt-1 !block !px-2 !py-1 !text-xs"
-                          disabled={payingCargoId === c.id}
-                          onClick={() => handlePayCargoChapa(c)}
-                        >
-                          {payingCargoId === c.id ? "Opening…" : "Pay with Chapa"}
-                        </Button>
-                      ) : null}
-                    </td>
-                    <td className="py-3 pr-3 font-mono text-xs">
-                      {c.tracking_code || "—"}
-                    </td>
-                    <td className="py-3 pr-3">
-                      <span
-                        className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${statusTone(c.status)}`}
-                      >
-                        {c.status ?? "—"}
-                      </span>
-                    </td>
-                    <td className="py-3">
-                      <div className="flex flex-wrap gap-2">
-                        {isPendingCargo(c) ? (
-                          !isCargoFeePaid(c.payment_status) ? (
-                            <>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                className="!px-2 !py-1 !text-xs"
-                                onClick={() => openEdit(c)}
-                              >
-                                Edit
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                className="!px-2 !py-1 !text-xs text-red-300 hover:text-red-200"
-                                onClick={() => setDeleteTarget(c.id)}
-                              >
-                                Cancel
-                              </Button>
-                            </>
-                          ) : (
-                            <span className="text-xs text-slate-500">
-                              Locked after fee payment
-                            </span>
-                          )
-                        ) : (
-                          <span className="text-xs text-slate-500">—</span>
-                        )}
-                      </div>
-                    </td>
+                        {payingCargoId === c.id ? "Opening…" : "Pay with Chapa"}
+                      </Button>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 border-t border-white/5 pt-3">
+                    {isPendingCargo(c) ? (
+                      !isCargoFeePaid(c.payment_status) ? (
+                        <>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="!px-3 !py-1.5 !text-xs"
+                            onClick={() => openEdit(c)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="!px-3 !py-1.5 !text-xs text-red-300 hover:text-red-200"
+                            onClick={() => setDeleteTarget(c.id)}
+                          >
+                            Cancel
+                          </Button>
+                        </>
+                      ) : (
+                        <span className="text-xs text-slate-500">
+                          Locked after fee payment
+                        </span>
+                      )
+                    ) : (
+                      <span className="text-xs text-slate-500">—</span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[640px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-primary-200 text-xs uppercase text-slate-500 dark:border-white/10">
+                    <th className="pb-2 pr-3 font-medium">ID</th>
+                    <th className="pb-2 pr-3 font-medium">Route</th>
+                    <th className="pb-2 pr-3 font-medium">Departure</th>
+                    <th className="pb-2 pr-3 font-medium">Weight</th>
+                    <th className="pb-2 pr-3 font-medium">Fee</th>
+                    <th className="pb-2 pr-3 font-medium">Fee pay</th>
+                    <th className="pb-2 pr-3 font-medium">Tracking</th>
+                    <th className="pb-2 pr-3 font-medium">Status</th>
+                    <th className="pb-2 font-medium">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {cargo.map((c) => (
+                    <tr
+                      key={c.id}
+                      className="text-p-body border-b border-primary-100 last:border-0 dark:border-white/5"
+                    >
+                      <td className="py-3 pr-3 font-mono text-xs">#{c.id}</td>
+                      <td className="max-w-[10rem] break-words py-3 pr-3">
+                        {(c.route_origin ?? "—") + " → " + (c.route_destination ?? "—")}
+                      </td>
+                      <td className="text-p-muted py-3 pr-3 text-xs">
+                        {formatDate(c.trip_departure_time)}
+                      </td>
+                      <td className="py-3 pr-3">
+                        {c.weight != null ? `${c.weight} kg` : "—"}
+                      </td>
+                      <td className="py-3 pr-3">{formatMoney(c.fee)}</td>
+                      <td className="py-3 pr-3">
+                        <span
+                          className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${statusTone(c.payment_status)}`}
+                        >
+                          {c.payment_status ?? "pending"}
+                        </span>
+                        {!isCargoFeePaid(c.payment_status) ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="mt-1 !block !px-2 !py-1 !text-xs"
+                            disabled={payingCargoId === c.id}
+                            onClick={() => handlePayCargoChapa(c)}
+                          >
+                            {payingCargoId === c.id ? "Opening…" : "Pay with Chapa"}
+                          </Button>
+                        ) : null}
+                      </td>
+                      <td className="py-3 pr-3 font-mono text-xs">
+                        {c.tracking_code || "—"}
+                      </td>
+                      <td className="py-3 pr-3">
+                        <span
+                          className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${statusTone(c.status)}`}
+                        >
+                          {c.status ?? "—"}
+                        </span>
+                      </td>
+                      <td className="py-3">
+                        <div className="flex flex-wrap gap-2">
+                          {isPendingCargo(c) ? (
+                            !isCargoFeePaid(c.payment_status) ? (
+                              <>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  className="!px-2 !py-1 !text-xs"
+                                  onClick={() => openEdit(c)}
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  className="!px-2 !py-1 !text-xs text-red-300 hover:text-red-200"
+                                  onClick={() => setDeleteTarget(c.id)}
+                                >
+                                  Cancel
+                                </Button>
+                              </>
+                            ) : (
+                              <span className="text-xs text-slate-500">
+                                Locked after fee payment
+                              </span>
+                            )
+                          ) : (
+                            <span className="text-xs text-slate-500">—</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </Card>
 
       <Card
+        className="!p-4 sm:!p-6"
         title="Cargo receipts"
         subtitle="Issued receipts for your shipments (staff creates these when payment is recorded)."
       >
@@ -641,82 +744,143 @@ export function PassengerDashboardPage() {
             cargo.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[800px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-primary-200 text-xs uppercase text-slate-500 dark:border-white/10">
-                  <th className="pb-2 pr-3 font-medium">Receipt</th>
-                  <th className="pb-2 pr-3 font-medium">Issued</th>
-                  <th className="pb-2 pr-3 font-medium">Amount</th>
-                  <th className="pb-2 pr-3 font-medium">Cargo</th>
-                  <th className="pb-2 pr-3 font-medium">Route</th>
-                  <th className="pb-2 pr-3 font-medium">Tracking</th>
-                  <th className="pb-2 pr-3 font-medium">Summary</th>
-                  <th className="pb-2 font-medium">Shipment status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cargoReceipts.map((r) => {
-                  const brief = r.brief_description?.trim() || "";
-                  const briefShort =
-                    brief.length > 48 ? `${brief.slice(0, 45)}…` : brief;
-                  return (
-                    <tr
-                      key={r.id}
-                      className="text-p-body border-b border-primary-100 last:border-0 dark:border-white/5"
-                    >
-                      <td className="py-3 pr-3 font-mono text-xs">#{r.id}</td>
-                      <td className="text-p-muted py-3 pr-3 text-xs">
-                        {formatDate(r.issued_at)}
-                      </td>
-                      <td className="py-3 pr-3">{formatMoney(r.amount)}</td>
-                      <td className="py-3 pr-3 font-mono text-xs">
-                        #{r.cargo_id ?? "—"}
-                      </td>
-                      <td className="py-3 pr-3">
-                        {(r.route_summary || "").trim() &&
-                        (r.route_summary || "").trim() !== "→"
-                          ? r.route_summary
-                          : "—"}
-                      </td>
-                      <td className="py-3 pr-3 font-mono text-xs">
-                        {r.tracking_code || "—"}
-                      </td>
-                      <td
-                        className="text-p-muted max-w-[12rem] truncate py-3 pr-3 text-xs"
-                        title={brief || undefined}
+          <>
+            <ul className="space-y-3 lg:hidden">
+              {cargoReceipts.map((r) => {
+                const brief = r.brief_description?.trim() || "";
+                const route =
+                  (r.route_summary || "").trim() &&
+                  (r.route_summary || "").trim() !== "→"
+                    ? r.route_summary
+                    : "—";
+                return (
+                  <li
+                    key={r.id}
+                    className="rounded-xl border border-white/10 bg-slate-900/40 p-3.5"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-mono text-sm font-semibold text-slate-200">
+                        Receipt #{r.id}
+                      </span>
+                      <span
+                        className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${statusTone(r.cargo_status)}`}
                       >
-                        {briefShort || "—"}
-                      </td>
-                      <td className="py-3">
-                        <span
-                          className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${statusTone(r.cargo_status)}`}
+                        {r.cargo_status ?? "—"}
+                      </span>
+                    </div>
+                    <p className="text-p-muted mt-1 text-xs">
+                      Issued {formatDate(r.issued_at)}
+                    </p>
+                    <dl className="mt-3 space-y-2 text-sm">
+                      <div className="flex flex-wrap justify-between gap-2">
+                        <dt className="text-slate-500">Amount</dt>
+                        <dd className="font-medium">{formatMoney(r.amount)}</dd>
+                      </div>
+                      <div className="flex flex-wrap justify-between gap-2">
+                        <dt className="text-slate-500">Cargo</dt>
+                        <dd className="font-mono text-xs">#{r.cargo_id ?? "—"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-slate-500">Route</dt>
+                        <dd className="mt-0.5 break-words">{route}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-slate-500">Tracking</dt>
+                        <dd className="mt-0.5 break-all font-mono text-xs">
+                          {r.tracking_code || "—"}
+                        </dd>
+                      </div>
+                      {brief ? (
+                        <div>
+                          <dt className="text-slate-500">Summary</dt>
+                          <dd className="mt-0.5 break-words text-xs text-slate-400">
+                            {brief}
+                          </dd>
+                        </div>
+                      ) : null}
+                    </dl>
+                  </li>
+                );
+              })}
+            </ul>
+
+            <div className="hidden overflow-x-auto lg:block">
+              <table className="w-full min-w-[800px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-primary-200 text-xs uppercase text-slate-500 dark:border-white/10">
+                    <th className="pb-2 pr-3 font-medium">Receipt</th>
+                    <th className="pb-2 pr-3 font-medium">Issued</th>
+                    <th className="pb-2 pr-3 font-medium">Amount</th>
+                    <th className="pb-2 pr-3 font-medium">Cargo</th>
+                    <th className="pb-2 pr-3 font-medium">Route</th>
+                    <th className="pb-2 pr-3 font-medium">Tracking</th>
+                    <th className="pb-2 pr-3 font-medium">Summary</th>
+                    <th className="pb-2 font-medium">Shipment status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cargoReceipts.map((r) => {
+                    const brief = r.brief_description?.trim() || "";
+                    const briefShort =
+                      brief.length > 48 ? `${brief.slice(0, 45)}…` : brief;
+                    return (
+                      <tr
+                        key={r.id}
+                        className="text-p-body border-b border-primary-100 last:border-0 dark:border-white/5"
+                      >
+                        <td className="py-3 pr-3 font-mono text-xs">#{r.id}</td>
+                        <td className="text-p-muted py-3 pr-3 text-xs">
+                          {formatDate(r.issued_at)}
+                        </td>
+                        <td className="py-3 pr-3">{formatMoney(r.amount)}</td>
+                        <td className="py-3 pr-3 font-mono text-xs">
+                          #{r.cargo_id ?? "—"}
+                        </td>
+                        <td className="max-w-[10rem] break-words py-3 pr-3">
+                          {(r.route_summary || "").trim() &&
+                          (r.route_summary || "").trim() !== "→"
+                            ? r.route_summary
+                            : "—"}
+                        </td>
+                        <td className="py-3 pr-3 font-mono text-xs">
+                          {r.tracking_code || "—"}
+                        </td>
+                        <td
+                          className="text-p-muted max-w-[12rem] truncate py-3 pr-3 text-xs"
+                          title={brief || undefined}
                         >
-                          {r.cargo_status ?? "—"}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                          {briefShort || "—"}
+                        </td>
+                        <td className="py-3">
+                          <span
+                            className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${statusTone(r.cargo_status)}`}
+                          >
+                            {r.cargo_status ?? "—"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </Card>
 
       {editing ? (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:items-center sm:p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="cargo-edit-title"
           onClick={() => !editBusy && setEditing(null)}
         >
           <div
-            className="w-full max-w-lg"
+            className="w-full min-w-0 max-w-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <Card className="max-h-[90vh] overflow-y-auto !p-6 shadow-2xl">
+            <Card className="max-h-[min(90vh,100dvh)] overflow-y-auto !p-4 shadow-2xl sm:!p-6">
             <h2
               id="cargo-edit-title"
               className="text-p-heading text-lg font-semibold"

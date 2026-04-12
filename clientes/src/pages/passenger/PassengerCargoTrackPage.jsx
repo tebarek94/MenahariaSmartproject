@@ -13,6 +13,7 @@ import {
   parseCargoFeeForChapa,
 } from "@/utils/cargoPayment.js";
 import { formatDate, formatMoney } from "@/utils/format.js";
+import { PassengerCargoGpsMap } from "@/components/maps/PassengerCargoGpsMap.jsx";
 
 function normalizeList(x) {
   return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
@@ -244,6 +245,12 @@ export function PassengerCargoTrackPage() {
           </div>
         </Card>
       ) : null}
+
+      <PassengerCargoGpsMap
+        cargo={cargo}
+        title="Live shipment map"
+        subtitle="Shows drivers for paid, confirmed shipments when they share GPS."
+      />
 
       <Card className="!p-4">
         <Input

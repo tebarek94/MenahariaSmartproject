@@ -3,6 +3,7 @@ import { Button } from "@/ui/Button.jsx";
 import { cn } from "@/utils/cn.js";
 import { adminTitleForPath } from "@/utils/adminNav.js";
 import { ROUTES } from "@/utils/constants.js";
+import { UserVerifiedBadge } from "@/components/UserVerifiedBadge.jsx";
 
 function MenuIcon({ className }) {
   return (
@@ -109,11 +110,14 @@ export function AdminHeader({ user, onLogout, onMenuClick, theme, onToggleTheme 
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         <span
           className={cn(
-            "hidden max-w-[140px] truncate text-sm lg:inline",
+            "hidden max-w-[180px] items-center gap-1.5 truncate text-sm lg:inline-flex",
             isLight ? "text-slate-600" : "text-slate-400"
           )}
         >
-          {user?.full_name || user?.phone || "Admin"}
+          <span className="truncate">
+            {user?.full_name || user?.phone || "Admin"}
+          </span>
+          <UserVerifiedBadge user={user} isLight={isLight} />
         </span>
         <Button
           variant={isLight ? "secondary" : "ghost"}

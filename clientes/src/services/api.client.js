@@ -20,7 +20,13 @@ function messageFromResponseBody(data) {
 
 function isPublicAuthRequest(path) {
   const p = path.replace(/^\//, "").toLowerCase();
-  return p === "api/login" || p === "api/register";
+  return (
+    p === "api/login" ||
+    p === "api/login/2fa" ||
+    p === "api/register" ||
+    p === "api/passenger/register/start" ||
+    p === "api/passenger/register/verify"
+  );
 }
 
 /**

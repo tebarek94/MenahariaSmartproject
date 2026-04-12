@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/ui/Button.jsx";
 import { cn } from "@/utils/cn.js";
 import { ROUTES } from "@/utils/constants.js";
+import { UserVerifiedBadge } from "@/components/UserVerifiedBadge.jsx";
 
 function MenuIcon({ className }) {
   return (
@@ -129,11 +130,14 @@ export function PassengerHeader({
       <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
         <span
           className={cn(
-            "hidden max-w-[160px] truncate text-sm sm:inline",
+            "hidden max-w-[200px] items-center gap-1.5 truncate text-sm sm:inline-flex",
             isLight ? "text-slate-600" : "text-slate-400",
           )}
         >
-          {user?.full_name || user?.phone || "Passenger"}
+          <span className="truncate">
+            {user?.full_name || user?.phone || "Passenger"}
+          </span>
+          <UserVerifiedBadge user={user} isLight={isLight} />
         </span>
         <Button
           variant={isLight ? "secondary" : "ghost"}

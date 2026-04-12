@@ -77,7 +77,9 @@ export function PassengerLandingPage() {
             <p className="max-w-xl text-base leading-relaxed text-slate-300 sm:text-lg">
               Menahariya Smart connects passengers with scheduled routes, live
               ticket status, digital QR boarding, and cargo on the same trips
-              your driver already runs.
+              your driver already runs — with email-verified signup, optional
+              two-step sign-in, and live shipment maps when your driver shares
+              location.
             </p>
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <Link to={ROUTES.PASSENGER_REGISTER} className="w-full sm:w-auto">
@@ -126,8 +128,97 @@ export function PassengerLandingPage() {
                     quick verification at the gate.
                   </span>
                 </li>
+                <li className="flex gap-3">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
+                    ✓
+                  </span>
+                  <span>
+                    <strong className="text-white">Email-verified signup</strong>{" "}
+                    — confirm your address with a one-time code before your account
+                    is activated.
+                  </span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
+                    ✓
+                  </span>
+                  <span>
+                    <strong className="text-white">Live cargo map</strong> on your
+                    dashboard when your driver shares GPS — free OpenStreetMap
+                    tiles, no extra map subscription.
+                  </span>
+                </li>
               </ul>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        id="whats-new"
+        className="border-t border-white/10 bg-slate-950/40 py-12 sm:py-16"
+      >
+        <div className="mx-auto max-w-6xl px-3 sm:px-4 lg:px-6">
+          <h2 className="text-center text-xl font-bold text-white sm:text-2xl md:text-3xl">
+            New on the platform
+          </h2>
+          <p className="mx-auto mt-2 max-w-2xl px-1 text-center text-sm leading-relaxed text-slate-400 sm:text-base">
+            Recent upgrades focused on trust, security, and visibility — so you
+            always know where your booking stands.
+          </p>
+          <div className="mt-8 grid grid-cols-1 gap-4 sm:mt-10 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
+            <article className="rounded-2xl border border-white/10 bg-slate-900/50 p-4 sm:p-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400/90">
+                Signup
+              </p>
+              <h3 className="mt-2 text-base font-semibold text-white sm:text-lg">
+                Email OTP registration
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                When you create a passenger account, we send a code to your
+                inbox. Enter it to finish registration — reduces mistakes and
+                fake signups.
+              </p>
+            </article>
+            <article className="rounded-2xl border border-white/10 bg-slate-900/50 p-4 sm:p-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400/90">
+                Security
+              </p>
+              <h3 className="mt-2 text-base font-semibold text-white sm:text-lg">
+                Email sign-in protection
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                Turn on optional two-step verification in your profile. Sign-in
+                and sensitive changes can require a code sent to your email — no
+                extra apps required.
+              </p>
+            </article>
+            <article className="rounded-2xl border border-white/10 bg-slate-900/50 p-4 sm:p-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400/90">
+                Cargo
+              </p>
+              <h3 className="mt-2 text-base font-semibold text-white sm:text-lg">
+                Live GPS on your dashboard
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                For paid, confirmed shipments with an assigned driver, your
+                dashboard and Track cargo page can show a live map when the
+                driver shares location with operations.
+              </p>
+            </article>
+            <article className="rounded-2xl border border-white/10 bg-slate-900/50 p-4 sm:p-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400/90">
+                Maps
+              </p>
+              <h3 className="mt-2 text-base font-semibold text-white sm:text-lg">
+                OpenStreetMap everywhere
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                Live views use free, community-built map tiles — no paid map API
+                keys for passengers. Operators use the same stack for fleet
+                visibility.
+              </p>
+            </article>
           </div>
         </div>
       </section>
@@ -169,7 +260,8 @@ export function PassengerLandingPage() {
               </h3>
               <p className="mt-2 text-sm text-slate-400">
                 Send parcels on scheduled departures. Track weight, fees, and
-                delivery state from your passenger dashboard.
+                status from your dashboard — and see live map updates for active
+                shipments when your driver is sharing GPS.
               </p>
             </div>
           </article>

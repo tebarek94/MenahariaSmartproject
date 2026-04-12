@@ -4,6 +4,7 @@ import { useAsync } from "@/hooks/useAsync.js";
 import { useAuth } from "@/hooks/useAuth.js";
 import { profileService } from "@/services/profile.service.js";
 import { ProfileForm } from "@/components/ProfileForm.jsx";
+import { TwoFactorProfileSection } from "@/components/profile/TwoFactorProfileSection.jsx";
 import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
@@ -67,6 +68,20 @@ export function PassengerProfilePage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const refreshSessionUser = async () => {
+    const fresh = await profileService.getProfile();
+    const body = fresh?.user ?? fresh;
+    const merged = {
+      ...auth.user,
+      ...body,
+      role_name: auth.user?.role_name,
+      role_id: body?.role_id ?? auth.user?.role_id,
+    };
+    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(merged));
+    window.dispatchEvent(new Event(AUTH_LOCAL_SYNC_EVENT));
+    await profileData.run();
   };
 
   const handleDelete = async () => {
@@ -148,6 +163,8 @@ export function PassengerProfilePage() {
         loading={loading}
         error={error}
       />
+
+      <TwoFactorProfileSection user={user} onChanged={refreshSessionUser} />
 
       <Card title="Account" subtitle="Read-only summary">
         <div className="grid gap-3 text-sm sm:grid-cols-2">

@@ -42,6 +42,8 @@ DROP TABLE IF EXISTS trips;
 DROP TABLE IF EXISTS seats;
 DROP TABLE IF EXISTS role_permissions;
 DROP TABLE IF EXISTS support_chat_messages;
+DROP TABLE IF EXISTS user_two_factor_email_otp;
+DROP TABLE IF EXISTS passenger_registration_pending;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS reports;
 DROP TABLE IF EXISTS vehicles;
@@ -85,12 +87,43 @@ CREATE TABLE users (
   phone VARCHAR(32) NOT NULL,
   email VARCHAR(255) NULL,
   password_hash VARCHAR(255) NOT NULL,
+  two_factor_secret VARCHAR(64) NULL DEFAULT NULL,
+  two_factor_enabled TINYINT(1) NOT NULL DEFAULT 0,
   role_id INT NOT NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'active',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uk_users_phone (phone),
   KEY idx_users_role (role_id),
   CONSTRAINT fk_users_role FOREIGN KEY (role_id) REFERENCES roles (id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE user_two_factor_email_otp (
+  user_id INT NOT NULL,
+  otp_hash VARCHAR(255) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  purpose VARCHAR(24) NOT NULL,
+  attempts INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, purpose),
+  KEY idx_user_2fa_email_otp_expires (expires_at),
+  CONSTRAINT fk_user_2fa_email_otp_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE passenger_registration_pending (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(255) NOT NULL,
+  phone VARCHAR(32) NOT NULL,
+  full_name VARCHAR(255) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  role_id INT NOT NULL,
+  otp_hash VARCHAR(255) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  otp_attempts INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_passenger_pending_email (email),
+  UNIQUE KEY uk_passenger_pending_phone (phone),
+  KEY idx_passenger_pending_expires (expires_at),
+  CONSTRAINT fk_passenger_pending_role FOREIGN KEY (role_id) REFERENCES roles (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------

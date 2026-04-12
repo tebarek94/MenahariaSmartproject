@@ -70,7 +70,7 @@ export function AdminRegisterPage() {
       backLabel="← Menahariya Smart"
       eyebrow="Admin console"
       heroTitle="Create an operations account"
-      heroDescription="Register to configure the network: users, roles, routes, vehicles, seats, trips, and reports. After approval, sign in from this portal anytime."
+      heroDescription="Book seats. Track status. Travel with confidence. Register to configure the network: users, roles, routes, vehicles, seats, trips, and reports. After approval, sign in from this portal anytime."
       panelTitle="Create account"
       panelSubtitle="Use a valid Ethiopian phone number; you’ll sign in with it after registration."
       footer={

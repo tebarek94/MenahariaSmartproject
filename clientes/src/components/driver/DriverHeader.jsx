@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/ui/Button.jsx";
 import { cn } from "@/utils/cn.js";
 import { ROUTES } from "@/utils/constants.js";
+import { UserVerifiedBadge } from "@/components/UserVerifiedBadge.jsx";
 
 function MenuIcon({ className }) {
   return (
@@ -62,7 +63,11 @@ function MoonIcon({ className }) {
 
 const DRIVER_PAGE_TITLES = {
   [ROUTES.DRIVER_DASHBOARD]: "Overview",
+  [ROUTES.DRIVER_LIVE_GPS]: "Share location",
   [ROUTES.DRIVER_TRIPS]: "My trips",
+  [ROUTES.DRIVER_PASSENGERS]: "Passengers",
+  [ROUTES.DRIVER_CARGO]: "Cargo",
+  [ROUTES.DRIVER_NOTIFICATIONS]: "Notifications",
   [ROUTES.DRIVER_PROFILE]: "Profile",
 };
 
@@ -125,11 +130,14 @@ export function DriverHeader({
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         <span
           className={cn(
-            "hidden max-w-[140px] truncate text-sm lg:inline",
+            "hidden max-w-[180px] items-center gap-1.5 truncate text-sm lg:inline-flex",
             isLight ? "text-slate-600" : "text-slate-400",
           )}
         >
-          {user?.full_name || user?.phone || "Driver"}
+          <span className="truncate">
+            {user?.full_name || user?.phone || "Driver"}
+          </span>
+          <UserVerifiedBadge user={user} isLight={isLight} />
         </span>
         <Button
           variant={isLight ? "secondary" : "ghost"}

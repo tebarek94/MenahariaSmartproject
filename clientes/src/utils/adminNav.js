@@ -9,6 +9,7 @@ export const ADMIN_NAV_SECTIONS = [
     title: "CRUD",
     items: [
       { to: ROUTES.DASHBOARD, label: "Overview", end: true },
+      { to: ROUTES.ADMIN_LIVE_GPS, label: "Live GPS", end: true },
       { to: ROUTES.ADMIN_USERS, label: "Users", end: true },
       { to: ROUTES.ADMIN_ROLES, label: "Roles", end: true },
       { to: ROUTES.ADMIN_PERMISSIONS, label: "Permissions", end: true },
@@ -47,6 +48,7 @@ export const ADMIN_NAV = ADMIN_NAV_SECTIONS.flatMap((s) => s.items);
 
 export const ADMIN_PAGE_TITLES = {
   [ROUTES.DASHBOARD]: "Overview",
+  [ROUTES.ADMIN_LIVE_GPS]: "Live GPS",
   [ROUTES.ADMIN_PROFILE]: "Profile",
   [ROUTES.ADMIN_USERS]: "Users",
   [ROUTES.ADMIN_ROLES]: "Roles",

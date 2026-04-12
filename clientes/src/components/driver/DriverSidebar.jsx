@@ -7,6 +7,7 @@ const DRIVER_NAV_SECTIONS = [
     title: "Workspace",
     items: [
       { to: ROUTES.DRIVER_DASHBOARD, label: "Overview", end: true },
+      { to: ROUTES.DRIVER_LIVE_GPS, label: "Share location", end: true },
       { to: ROUTES.DRIVER_TRIPS, label: "My trips", end: true },
       { to: ROUTES.DRIVER_PASSENGERS, label: "Passengers", end: true },
       { to: ROUTES.DRIVER_CARGO, label: "Cargo", end: true },
@@ -15,7 +16,9 @@ const DRIVER_NAV_SECTIONS = [
   },
   {
     title: "Account",
-    items: [{ to: ROUTES.DRIVER_PROFILE, label: "Profile", end: true }],
+    items: [
+      { to: ROUTES.DRIVER_PROFILE, label: "Profile", end: true },
+    ],
   },
 ];
 

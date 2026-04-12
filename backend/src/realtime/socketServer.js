@@ -1,6 +1,7 @@
 import { Server } from "socket.io";
 import { verifyAccessToken } from "../utils/jwtVerify.js";
 import { attachSupportChatHandlers } from "./supportChatHandlers.js";
+import { attachGpsTrackingHandlers } from "./gpsTrackingHandlers.js";
 
 /** @type {import("socket.io").Server | null} */
 let io = null;
@@ -69,6 +70,8 @@ export function initSocketServer(httpServer, corsOrigins) {
       emitToRole,
       emitToUser,
     });
+
+    attachGpsTrackingHandlers(socket, { emitToRole, emitToGpsWatchers });
   });
 
   return io;
@@ -92,4 +95,13 @@ export function emitToRole(roleName, event, payload) {
   const role = normalizeRoleName(roleName);
   if (!role) return;
   srv.to(`role:${role}`).emit(event, payload);
+}
+
+/** Passengers joined via `gps:passenger_subscribe` (room per driver user id). */
+export function emitToGpsWatchers(driverUserId, event, payload) {
+  const srv = io;
+  if (!srv || driverUserId == null) return;
+  const id = Number(driverUserId);
+  if (!Number.isInteger(id) || id <= 0) return;
+  srv.to(`gps:driver:${id}`).emit(event, payload);
 }

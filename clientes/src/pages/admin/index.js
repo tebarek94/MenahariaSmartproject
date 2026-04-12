@@ -17,3 +17,4 @@ export { AdminSupportChatPage } from "./AdminSupportChatPage.jsx";
 export { AdminReportsPage } from "./AdminReportsPage.jsx";
 export { AdminRelationsOverviewPage } from "./AdminRelationsOverviewPage.jsx";
 export { AdminProfilePage } from "./AdminProfilePage.jsx";
+export { AdminLiveGpsPage } from "./AdminLiveGpsPage.jsx";

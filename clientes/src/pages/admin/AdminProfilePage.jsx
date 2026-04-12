@@ -3,6 +3,7 @@ import { useAsync } from "@/hooks/useAsync.js";
 import { useAuth } from "@/hooks/useAuth.js";
 import { profileService } from "@/services/profile.service.js";
 import { ProfileForm } from "@/components/ProfileForm.jsx";
+import { TwoFactorProfileSection } from "@/components/profile/TwoFactorProfileSection.jsx";
 import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
@@ -64,6 +65,19 @@ export function AdminProfilePage() {
     }
   };
 
+  const refreshSessionUser = async () => {
+    const fresh = await profileService.getProfile();
+    const merged = {
+      ...auth.user,
+      ...fresh,
+      role_name: auth.user?.role_name,
+      role_id: fresh?.role_id ?? auth.user?.role_id,
+    };
+    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(merged));
+    window.dispatchEvent(new Event(AUTH_LOCAL_SYNC_EVENT));
+    await profileData.run();
+  };
+
   const handleDelete = async () => {
     setLoading(true);
     setError("");
@@ -120,11 +134,16 @@ export function AdminProfilePage() {
       )}
 
       <ProfileForm
-        user={profileData.data?.user || auth.user}
+        user={profileData.data?.user || profileData.data || auth.user}
         onSave={handleSave}
         onDelete={handleDelete}
         loading={loading}
         error={error}
+      />
+
+      <TwoFactorProfileSection
+        user={profileData.data?.user || profileData.data || auth.user}
+        onChanged={refreshSessionUser}
       />
 
       {/* Admin-specific settings */}

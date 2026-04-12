@@ -55,27 +55,6 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const login = useCallback(async (phone, password) => {
-    const data = await authService.login(phone, password);
-    setToken(authService.getToken());
-    setUser(authService.getStoredUser());
-    return data;
-  }, []);
-
-  const loginAsAdmin = useCallback(async (phone, password) => {
-    const data = await authService.loginAsAdmin(phone, password);
-    setToken(authService.getToken());
-    setUser(authService.getStoredUser());
-    return data;
-  }, []);
-
-  const loginAsDriver = useCallback(async (phone, password) => {
-    const data = await authService.loginAsDriver(phone, password);
-    setToken(authService.getToken());
-    setUser(authService.getStoredUser());
-    return data;
-  }, []);
-
   const logout = useCallback(() => {
     const roleName = user?.role_name;
     authService.logout();
@@ -92,12 +71,9 @@ export function AuthProvider({ children }) {
       isAdmin: isAdminRole(user?.role_name),
       isDriver: isDriverRole(user?.role_name),
       isPassenger: isPassengerRole(user?.role_name),
-      login,
-      loginAsAdmin,
-      loginAsDriver,
       logout,
     }),
-    [token, user, login, loginAsAdmin, loginAsDriver, logout]
+    [token, user, logout]
   );
 
   return (

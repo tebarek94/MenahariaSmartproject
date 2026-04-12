@@ -104,6 +104,7 @@ export const getCargoByOwnerIdWithTrip = (ownerId) =>
             t.arrival_time AS trip_arrival_time,
             t.status AS trip_status,
             t.price AS trip_price,
+            t.driver_id AS trip_driver_id,
             r.origin AS route_origin,
             r.destination AS route_destination,
             v.plate_number AS vehicle_plate

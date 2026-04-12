@@ -88,4 +88,7 @@ export const ROUTES = {
   ADMIN_REPORTS: "/admin/reports",
   /** Read-only joined views */
   ADMIN_RELATIONS: "/admin/relations",
+  /** Live driver GPS (OpenStreetMap + Socket.IO) */
+  ADMIN_LIVE_GPS: "/admin/live-gps",
+  DRIVER_LIVE_GPS: "/driver/live-gps",
   };
