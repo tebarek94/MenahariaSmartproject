@@ -8,12 +8,19 @@ import { Input } from "@/ui/Input.jsx";
 import { Select } from "@/ui/Select.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
-import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
-import { DeleteModal } from "@/components/DeleteModal.jsx";
+import { PencilIcon, CheckIcon, XIcon } from "@/ui/icons.jsx";
 import { formatDate, formatMoney, localInputToSqlDatetime, toDatetimeLocalValue } from "@/utils/format.js";
 
 const METHODS = ["cash", "mobile", "bank"];
 const STATUSES = ["pending", "completed", "failed", "refunded"];
+const SORT_OPTIONS = [
+  { value: "id", label: "ID" },
+  { value: "ticket_id", label: "Ticket" },
+  { value: "amount", label: "Amount" },
+  { value: "method", label: "Method" },
+  { value: "status", label: "Status" },
+  { value: "paid_at", label: "Paid at" },
+];
 
 function generateTransactionRef() {
   const ts = Date.now().toString(36).toUpperCase();
@@ -39,6 +46,11 @@ export function AdminPaymentsPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterMethod, setFilterMethod] = useState("");
+  const [sortKey, setSortKey] = useState("paid_at");
+  const [sortDir, setSortDir] = useState("desc");
 
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -59,9 +71,11 @@ export function AdminPaymentsPage() {
         ticketsService.list(),
         adminUsersService.list(),
       ]);
-      setPayments(Array.isArray(p) ? p : []);
-      setTickets(Array.isArray(t) ? t : []);
-      setUsers(Array.isArray(u) ? u : []);
+      const normalize = (x) =>
+        Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
+      setPayments(normalize(p));
+      setTickets(normalize(t));
+      setUsers(normalize(u));
     } catch (e) {
       setError(e?.message || "Failed to load");
     } finally {
@@ -75,7 +89,7 @@ export function AdminPaymentsPage() {
 
   const handleViewDetails = async (payment) => {
     try {
-      const paymentDetails = await paymentsService.getById(payment.id);
+      const paymentDetails = await paymentsService.get(payment.id);
       setSelectedPayment(paymentDetails);
       setShowDetails(true);
     } catch (err) {
@@ -108,6 +122,74 @@ export function AdminPaymentsPage() {
       default: return "text-gray-400";
     }
   };
+
+  const filteredSorted = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const statusQ = filterStatus.trim().toLowerCase();
+    const methodQ = filterMethod.trim().toLowerCase();
+    let rows = [...payments];
+
+    if (statusQ) {
+      rows = rows.filter(
+        (p) => String(p?.status ?? "").toLowerCase() === statusQ
+      );
+    }
+    if (methodQ) {
+      rows = rows.filter(
+        (p) => String(p?.method ?? "").toLowerCase() === methodQ
+      );
+    }
+    if (q) {
+      rows = rows.filter((p) => {
+        const parts = [
+          p?.id,
+          p?.ticket_id,
+          p?.user_id,
+          p?.amount,
+          p?.method,
+          p?.status,
+          p?.transaction_ref,
+          p?.paid_at,
+          p?.created_at,
+          p?.updated_at,
+          getUserName(p?.user_id),
+          getTicketInfo(p?.ticket_id),
+        ]
+          .filter((x) => x != null && x !== "")
+          .map((x) => String(x).toLowerCase());
+        return parts.some((s) => s.includes(q));
+      });
+    }
+
+    const dir = sortDir === "asc" ? 1 : -1;
+    rows.sort((a, b) => {
+      let va = a?.[sortKey];
+      let vb = b?.[sortKey];
+      if (["id", "ticket_id", "amount"].includes(sortKey)) {
+        va = Number(va) || 0;
+        vb = Number(vb) || 0;
+      } else if (sortKey === "paid_at") {
+        va = va ? new Date(va).getTime() : 0;
+        vb = vb ? new Date(vb).getTime() : 0;
+      } else {
+        va = String(va ?? "").toLowerCase();
+        vb = String(vb ?? "").toLowerCase();
+      }
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+    return rows;
+  }, [payments, search, filterStatus, filterMethod, sortKey, sortDir, users, tickets]);
+
+  function handleHeaderSort(key) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDir("asc");
+  }
 
   const ticketOptions = useMemo(() => {
     return tickets.map((t) => {
@@ -203,21 +285,91 @@ export function AdminPaymentsPage() {
       ) : null}
 
       <Card title="Payments">
-        <div className="mb-3">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <Input
+            label="Search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="ID, ticket, user, method, status, transaction ref..."
+            className="min-w-[240px] sm:flex-1"
+          />
+          <Select
+            label="Status"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="min-w-[140px]"
+          >
+            <option value="">All statuses</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Method"
+            value={filterMethod}
+            onChange={(e) => setFilterMethod(e.target.value)}
+            className="min-w-[140px]"
+          >
+            <option value="">All methods</option>
+            {METHODS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Sort by"
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value)}
+            className="min-w-[140px]"
+          >
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Order"
+            value={sortDir}
+            onChange={(e) => setSortDir(e.target.value)}
+            className="min-w-[120px]"
+          >
+            <option value="desc">Desc</option>
+            <option value="asc">Asc</option>
+          </Select>
           <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
             Refresh
           </Button>
+          <Button
+            variant="ghost"
+            className="!text-xs"
+            onClick={() => {
+              setSearch("");
+              setFilterStatus("");
+              setFilterMethod("");
+              setSortKey("paid_at");
+              setSortDir("desc");
+            }}
+          >
+            Clear
+          </Button>
         </div>
+        <p className="mb-2 text-xs text-slate-500">
+          Showing {filteredSorted.length} of {payments.length}
+        </p>
         <div className="overflow-x-auto rounded-lg border border-primary-900/30">
           <table className="w-full min-w-[800px] border-collapse text-left text-sm">
             <thead className="bg-slate-900/95 text-xs uppercase text-primary-400/90">
               <tr className="border-b border-primary-900/40">
-                <th className="px-2 py-2">Id</th>
-                <th className="px-2 py-2">Ticket</th>
-                <th className="px-2 py-2">Amount</th>
-                <th className="px-2 py-2">Method</th>
-                <th className="px-2 py-2">Status</th>
-                <th className="px-2 py-2">Paid</th>
+                <th className="px-2 py-2"><button type="button" className="hover:text-primary-300" onClick={() => handleHeaderSort("id")}>Id</button></th>
+                <th className="px-2 py-2"><button type="button" className="hover:text-primary-300" onClick={() => handleHeaderSort("ticket_id")}>Ticket</button></th>
+                <th className="px-2 py-2"><button type="button" className="hover:text-primary-300" onClick={() => handleHeaderSort("amount")}>Amount</button></th>
+                <th className="px-2 py-2"><button type="button" className="hover:text-primary-300" onClick={() => handleHeaderSort("method")}>Method</button></th>
+                <th className="px-2 py-2"><button type="button" className="hover:text-primary-300" onClick={() => handleHeaderSort("status")}>Status</button></th>
+                <th className="px-2 py-2"><button type="button" className="hover:text-primary-300" onClick={() => handleHeaderSort("paid_at")}>Paid</button></th>
                 <th className="px-2 py-2">Actions</th>
               </tr>
             </thead>
@@ -228,8 +380,14 @@ export function AdminPaymentsPage() {
                     No payments
                   </td>
                 </tr>
+              ) : filteredSorted.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-3 py-8 text-center text-slate-500">
+                    No rows match your filters
+                  </td>
+                </tr>
               ) : (
-                payments.map((p) => (
+                filteredSorted.map((p) => (
                   <Fragment key={p.id}>
                     <tr className="hover:bg-slate-800/30">
                       <td className="px-2 py-2 font-mono text-xs">{p.id}</td>

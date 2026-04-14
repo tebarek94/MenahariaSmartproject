@@ -10,6 +10,8 @@ import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Input } from "@/ui/Input.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
+import { RealtimeLineChart } from "@/ui/RealtimeLineChart.jsx";
+import { ChartTrendIcon } from "@/ui/icons.jsx";
 import { ConfirmModal } from "@/components/ConfirmModal.jsx";
 import { PassengerCargoGpsMap } from "@/components/maps/PassengerCargoGpsMap.jsx";
 import { ROUTES, STORAGE_KEYS } from "@/utils/constants.js";
@@ -25,6 +27,7 @@ function normalizeList(x) {
 }
 
 const POLL_MS = 25_000;
+const MAX_PASSENGER_SAMPLES = 20;
 
 function statusTone(s) {
   const v = String(s ?? "").toLowerCase();
@@ -48,6 +51,22 @@ function tripOptionLabel(t) {
   return `#${t.id} · ${o} → ${d} · ${when}`;
 }
 
+function isTripAvailableForPassenger(t) {
+  const status = String(t?.status ?? "").toLowerCase();
+  const allowedStatus =
+    status === "" ||
+    status === "scheduled" ||
+    status === "ongoing" ||
+    status === "open" ||
+    status === "active";
+
+  if (!allowedStatus) return false;
+
+  const ts = new Date(t?.departure_time ?? "").getTime();
+  if (!Number.isFinite(ts)) return true;
+  return ts > Date.now();
+}
+
 export function PassengerDashboardPage() {
   const auth = useAuth();
   const [tickets, setTickets] = useState([]);
@@ -58,6 +77,7 @@ export function PassengerDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [lastSync, setLastSync] = useState(null);
+  const [statsHistory, setStatsHistory] = useState([]);
 
   const [newTripId, setNewTripId] = useState("");
   const [newWeight, setNewWeight] = useState("");
@@ -169,9 +189,64 @@ export function PassengerDashboardPage() {
     };
   }, [tickets, cargo, cargoReceipts]);
 
+  useEffect(() => {
+    if (loading) return;
+    setStatsHistory((prev) =>
+      [
+        ...prev,
+        {
+          at: Date.now(),
+          activeTickets: stats.activeTickets,
+          payPending: stats.payPending,
+          cargoPending: stats.cargoPending,
+          totalCargo: stats.totalCargo,
+        },
+      ].slice(-MAX_PASSENGER_SAMPLES)
+    );
+  }, [
+    loading,
+    stats.activeTickets,
+    stats.payPending,
+    stats.cargoPending,
+    stats.totalCargo,
+  ]);
+
+  const passengerSeries = useMemo(
+    () => [
+      {
+        name: "Active tickets",
+        color: "#4A90E2",
+        values: statsHistory.map((x) => x.activeTickets),
+      },
+      {
+        name: "Pending payments",
+        color: "#F5A623",
+        values: statsHistory.map((x) => x.payPending),
+      },
+      {
+        name: "Pending cargo",
+        color: "#7ED321",
+        values: statsHistory.map((x) => x.cargoPending),
+      },
+    ],
+    [statsHistory]
+  );
+
   const recentTickets = useMemo(
     () => [...tickets].slice(0, 5),
     [tickets]
+  );
+
+  const availableTrips = useMemo(
+    () =>
+      trips
+        .filter((t) => isTripAvailableForPassenger(t))
+        .sort(
+          (a, b) =>
+            new Date(a.departure_time || 0).getTime() -
+            new Date(b.departure_time || 0).getTime()
+        ),
+    [trips]
   );
 
   const tripChoicesForEdit = useMemo(() => {
@@ -363,7 +438,7 @@ export function PassengerDashboardPage() {
           Status below refreshes automatically.
         </p>
         {lastSync ? (
-          <p className="mt-2 break-words text-xs leading-relaxed text-slate-500">
+          <p className="text-p-subtle mt-2 break-words text-xs leading-relaxed">
             Last updated {lastSync.toLocaleString()} · every {POLL_MS / 1000}s
             + when you return to this tab
           </p>
@@ -384,45 +459,90 @@ export function PassengerDashboardPage() {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         <Card className="!p-4 sm:!p-5">
-          <p className="text-xs uppercase tracking-wide text-slate-500">
+          <p className="text-p-subtle text-xs uppercase tracking-wide">
             Account
           </p>
             <p className="text-p-heading mt-1 text-lg font-semibold capitalize">
             {accountStatus}
           </p>
-          <p className="text-xs text-slate-500">Profile status in the system</p>
+          <p className="text-p-subtle text-xs">Profile status in the system</p>
         </Card>
         <Card className="!p-4 sm:!p-5">
-          <p className="text-xs uppercase tracking-wide text-slate-500">
+          <p className="text-p-subtle text-xs uppercase tracking-wide">
             Active tickets
           </p>
           <p className="mt-1 text-2xl font-bold text-emerald-400">
             {stats.activeTickets}
           </p>
-          <p className="text-xs text-slate-500">confirmed / reserved / pending</p>
+          <p className="text-p-subtle text-xs">confirmed / reserved / pending</p>
         </Card>
         <Card className="!p-4 sm:!p-5">
-          <p className="text-xs uppercase tracking-wide text-slate-500">
+          <p className="text-p-subtle text-xs uppercase tracking-wide">
             Payment pending
           </p>
           <p className="mt-1 text-2xl font-bold text-amber-400">
             {stats.payPending}
           </p>
-          <p className="text-xs text-slate-500">tickets awaiting payment</p>
+          <p className="text-p-subtle text-xs">tickets awaiting payment</p>
         </Card>
         <Card className="!p-4 sm:!p-5">
-          <p className="text-xs uppercase tracking-wide text-slate-500">
+          <p className="text-p-subtle text-xs uppercase tracking-wide">
             Cargo
           </p>
           <p className="mt-1 text-2xl font-bold text-sky-400">
             {stats.totalCargo}
           </p>
-          <p className="text-xs text-slate-500">
+          <p className="text-p-subtle text-xs">
             {stats.cargoPending} pending · {stats.receiptCount} receipt
             {stats.receiptCount === 1 ? "" : "s"}
           </p>
         </Card>
       </div>
+
+      <Card
+        className="!p-4 sm:!p-6"
+        title={
+          <span className="inline-flex items-center gap-2">
+            <ChartTrendIcon className="h-5 w-5 text-primary-600 dark:text-primary-400" />
+            Overview (live)
+          </span>
+        }
+        subtitle={`Real-time trend of your dashboard metrics. Updates every ${POLL_MS / 1000}s.`}
+      >
+        <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-lg border border-primary-200/70 bg-white/85 p-3 dark:border-white/10 dark:bg-slate-900/45">
+            <p className="text-p-subtle text-xs uppercase tracking-wide">Samples</p>
+            <p className="text-p-heading mt-1 text-xl font-semibold">
+              {statsHistory.length}
+            </p>
+          </div>
+          <div className="rounded-lg border border-primary-200/70 bg-white/85 p-3 dark:border-white/10 dark:bg-slate-900/45">
+            <p className="text-p-subtle text-xs uppercase tracking-wide">
+              Active tickets
+            </p>
+            <p className="text-p-heading mt-1 text-xl font-semibold">
+              {stats.activeTickets}
+            </p>
+          </div>
+          <div className="rounded-lg border border-primary-200/70 bg-white/85 p-3 dark:border-white/10 dark:bg-slate-900/45">
+            <p className="text-p-subtle text-xs uppercase tracking-wide">
+              Payment pending
+            </p>
+            <p className="mt-1 text-xl font-semibold text-amber-500 dark:text-amber-400">
+              {stats.payPending}
+            </p>
+          </div>
+          <div className="rounded-lg border border-primary-200/70 bg-white/85 p-3 dark:border-white/10 dark:bg-slate-900/45">
+            <p className="text-p-subtle text-xs uppercase tracking-wide">
+              Cargo pending
+            </p>
+            <p className="mt-1 text-xl font-semibold text-emerald-600 dark:text-emerald-400">
+              {stats.cargoPending}
+            </p>
+          </div>
+        </div>
+        <RealtimeLineChart series={passengerSeries} />
+      </Card>
 
       <PassengerCargoGpsMap cargo={cargo} />
 
@@ -439,7 +559,7 @@ export function PassengerDashboardPage() {
               {recentTickets.map((t) => (
                 <li
                   key={t.id}
-                  className="flex flex-col gap-2 rounded-lg border border-white/5 bg-slate-900/50 px-3 py-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+                  className="flex flex-col gap-2 rounded-lg border border-primary-200/70 bg-white/90 px-3 py-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between dark:border-white/5 dark:bg-slate-900/50"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="text-p-heading break-words font-medium leading-snug">
@@ -484,13 +604,13 @@ export function PassengerDashboardPage() {
                 required
               >
                 <option value="">Select trip…</option>
-                {trips.map((t) => (
+                {availableTrips.map((t) => (
                   <option key={t.id} value={t.id}>
                     {tripOptionLabel(t)}
                   </option>
                 ))}
               </select>
-              {trips.length === 0 ? (
+              {availableTrips.length === 0 ? (
                 <p className="mt-1 text-xs text-slate-500">
                   No open trips right now. Try again later or contact support.
                 </p>
@@ -523,7 +643,10 @@ export function PassengerDashboardPage() {
             {cargoFormError ? (
               <p className="text-sm text-red-400">{cargoFormError}</p>
             ) : null}
-            <Button type="submit" disabled={cargoFormBusy || trips.length === 0}>
+            <Button
+              type="submit"
+              disabled={cargoFormBusy || availableTrips.length === 0}
+            >
               {cargoFormBusy ? "Submitting…" : "Request cargo booking"}
             </Button>
           </form>
@@ -545,9 +668,9 @@ export function PassengerDashboardPage() {
               {cargo.map((c) => (
                 <li
                   key={c.id}
-                  className="rounded-xl border border-white/10 bg-slate-900/40 p-3.5 shadow-sm"
+                  className="rounded-xl border border-primary-200/70 bg-white/95 p-3.5 shadow-sm dark:border-white/10 dark:bg-slate-900/40"
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-2 border-b border-white/5 pb-2">
+                  <div className="flex flex-wrap items-start justify-between gap-2 border-b border-primary-100 pb-2 dark:border-white/5">
                     <span className="font-mono text-xs text-slate-400">#{c.id}</span>
                     <span
                       className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${statusTone(c.status)}`}
@@ -598,7 +721,7 @@ export function PassengerDashboardPage() {
                       </Button>
                     ) : null}
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2 border-t border-white/5 pt-3">
+                  <div className="mt-3 flex flex-wrap gap-2 border-t border-primary-100 pt-3 dark:border-white/5">
                     {isPendingCargo(c) ? (
                       !isCargoFeePaid(c.payment_status) ? (
                         <>
@@ -613,7 +736,7 @@ export function PassengerDashboardPage() {
                           <Button
                             type="button"
                             variant="ghost"
-                            className="!px-3 !py-1.5 !text-xs text-red-300 hover:text-red-200"
+                            className="!px-3 !py-1.5 !text-xs text-red-600 hover:text-red-700 dark:text-red-300 dark:hover:text-red-200"
                             onClick={() => setDeleteTarget(c.id)}
                           >
                             Cancel
@@ -708,7 +831,7 @@ export function PassengerDashboardPage() {
                                 <Button
                                   type="button"
                                   variant="ghost"
-                                  className="!px-2 !py-1 !text-xs text-red-300 hover:text-red-200"
+                                  className="!px-2 !py-1 !text-xs text-red-600 hover:text-red-700 dark:text-red-300 dark:hover:text-red-200"
                                   onClick={() => setDeleteTarget(c.id)}
                                 >
                                   Cancel
@@ -756,7 +879,7 @@ export function PassengerDashboardPage() {
                 return (
                   <li
                     key={r.id}
-                    className="rounded-xl border border-white/10 bg-slate-900/40 p-3.5"
+                    className="rounded-xl border border-primary-200/70 bg-white/95 p-3.5 dark:border-white/10 dark:bg-slate-900/40"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-mono text-sm font-semibold text-slate-200">

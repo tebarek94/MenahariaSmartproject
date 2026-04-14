@@ -1,12 +1,31 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { routesService } from "@/services/routes.service.js";
 import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Input } from "@/ui/Input.jsx";
+import { Select } from "@/ui/Select.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
 import { DeleteModal } from "@/components/DeleteModal.jsx";
+
+const SORT_OPTIONS = [
+  { value: "id", label: "ID" },
+  { value: "origin", label: "Origin" },
+  { value: "destination", label: "Destination" },
+  { value: "distance_km", label: "Distance" },
+];
+
+const HEADER_SORT_KEYS = {
+  Id: "id",
+  Origin: "origin",
+  Destination: "destination",
+  Km: "distance_km",
+};
+
+function normalizeList(x) {
+  return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
+}
 
 export function AdminRoutesPage() {
   const [rows, setRows] = useState([]);
@@ -17,6 +36,9 @@ export function AdminRoutesPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
   const [deleting, setDeleting] = useState(false);
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState("id");
+  const [sortDir, setSortDir] = useState("asc");
 
   const [cOrigin, setCOrigin] = useState("");
   const [cDest, setCDest] = useState("");
@@ -34,7 +56,7 @@ export function AdminRoutesPage() {
     setError("");
     try {
       const r = await routesService.list();
-      setRows(Array.isArray(r) ? r : []);
+      setRows(normalizeList(r));
     } catch (e) {
       setError(e?.message || "Failed to load routes");
     } finally {
@@ -59,6 +81,51 @@ export function AdminRoutesPage() {
   function closeEdit() {
     setEditingId(null);
     setEditForm({ origin: "", destination: "", distance_km: "" });
+  }
+
+  const filteredSorted = useMemo(() => {
+    let list = [...rows];
+    const q = search.trim().toLowerCase();
+    if (q) {
+      list = list.filter((r) => {
+        const parts = [r?.id, r?.origin, r?.destination, r?.distance_km]
+          .filter((x) => x != null && x !== "")
+          .map((x) => String(x).toLowerCase());
+        return parts.some((p) => p.includes(q));
+      });
+    }
+
+    const dir = sortDir === "asc" ? 1 : -1;
+    list.sort((a, b) => {
+      let va = a?.[sortKey];
+      let vb = b?.[sortKey];
+      if (["id", "distance_km"].includes(sortKey)) {
+        va = Number(va) || 0;
+        vb = Number(vb) || 0;
+      } else {
+        va = String(va ?? "").toLowerCase();
+        vb = String(vb ?? "").toLowerCase();
+      }
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+    return list;
+  }, [rows, search, sortKey, sortDir]);
+
+  function handleHeaderSort(key) {
+    if (!key) return;
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDir("asc");
+  }
+
+  function sortIndicator(key) {
+    if (sortKey !== key) return "↕";
+    return sortDir === "asc" ? "↑" : "↓";
   }
 
   async function handleCreate(e) {
@@ -118,8 +185,7 @@ export function AdminRoutesPage() {
   }
 
   async function handleRemove(id) {
-    const route = rows.find(r => r.id === id);
-    setDeleteModal({ isOpen: true, id, name: route?.name || `Route #${id}` });
+    setDeleteModal({ isOpen: true, id, name: `Route #${id}` });
   }
 
   const confirmDelete = async () => {
@@ -212,19 +278,75 @@ export function AdminRoutesPage() {
       </Card>
 
       <Card title="All routes">
-        <div className="mb-3">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <Input
+            label="Search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="ID, origin, destination, distance..."
+            className="min-w-[220px] sm:flex-1"
+          />
+          <Select
+            label="Sort by"
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value)}
+            className="min-w-[140px]"
+          >
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Order"
+            value={sortDir}
+            onChange={(e) => setSortDir(e.target.value)}
+            className="min-w-[120px]"
+          >
+            <option value="asc">Asc</option>
+            <option value="desc">Desc</option>
+          </Select>
           <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
             Refresh
           </Button>
+          <Button
+            variant="ghost"
+            className="!text-xs"
+            onClick={() => {
+              setSearch("");
+              setSortKey("id");
+              setSortDir("asc");
+            }}
+          >
+            Clear
+          </Button>
         </div>
+        <p className="mb-2 text-xs text-slate-500">
+          Showing {filteredSorted.length} of {rows.length}
+        </p>
         <div className="overflow-x-auto rounded-lg border border-primary-900/30">
           <table className="w-full min-w-[640px] border-collapse text-left text-sm">
             <thead className="bg-slate-900/95 text-xs uppercase text-primary-400/90">
               <tr className="border-b border-primary-900/40">
-                <th className="px-2 py-2">Id</th>
-                <th className="px-2 py-2">Origin</th>
-                <th className="px-2 py-2">Destination</th>
-                <th className="px-2 py-2">Km</th>
+                {["Id", "Origin", "Destination", "Km"].map((label) => {
+                  const key = HEADER_SORT_KEYS[label];
+                  return (
+                    <th key={label} className="px-2 py-2">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 hover:text-primary-300"
+                        onClick={() => handleHeaderSort(key)}
+                        title={`Sort by ${label}`}
+                      >
+                        <span>{label}</span>
+                        <span className="w-3 text-center text-[10px]">
+                          {sortIndicator(key)}
+                        </span>
+                      </button>
+                    </th>
+                  );
+                })}
                 <th className="px-2 py-2">Actions</th>
               </tr>
             </thead>
@@ -238,8 +360,17 @@ export function AdminRoutesPage() {
                     No routes
                   </td>
                 </tr>
+              ) : filteredSorted.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-3 py-8 text-center text-slate-500"
+                  >
+                    No rows match your search
+                  </td>
+                </tr>
               ) : (
-                rows.map((r) => (
+                filteredSorted.map((r) => (
                   <Fragment key={r.id}>
                     <tr className="hover:bg-slate-800/30">
                       <td className="px-2 py-2 font-mono text-xs">{r.id}</td>

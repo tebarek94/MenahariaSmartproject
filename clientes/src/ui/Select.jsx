@@ -15,7 +15,7 @@ export function Select({ label, id, className, children, ...props }) {
       <select
         id={sid}
         className={cn(
-          "ui-field",
+          "ui-field ui-select",
           className
         )}
         {...props}

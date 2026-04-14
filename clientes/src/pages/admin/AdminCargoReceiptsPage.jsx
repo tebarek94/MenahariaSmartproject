@@ -1,6 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { cargoReceiptsService } from "@/services/cargoReceipts.service.js";
-import { adminUsersService } from "@/services/adminUsers.service.js";
 import { cargoService } from "@/services/cargo.service.js";
 import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
@@ -12,6 +11,24 @@ import { PencilIcon, CheckIcon, TrashIcon, XIcon, DownloadIcon } from "@/ui/icon
 import { DeleteModal } from "@/components/DeleteModal.jsx";
 import { formatDate, formatMoney } from "@/utils/format.js";
 import { downloadCargoReceiptHtml } from "@/utils/cargoReceiptDocument.js";
+
+function paymentTone(s) {
+  const v = String(s ?? "").toLowerCase();
+  if (v === "paid" || v === "completed" || v === "success") {
+    return "bg-emerald-500/20 text-emerald-300";
+  }
+  if (v === "pending") {
+    return "bg-amber-500/20 text-amber-200";
+  }
+  if (v === "failed" || v === "cancelled") {
+    return "bg-red-500/20 text-red-300";
+  }
+  return "bg-slate-500/20 text-slate-300";
+}
+
+function normalizeList(x) {
+  return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
+}
 
 function DetailRow({ r }) {
   return (
@@ -56,6 +73,14 @@ function DetailRow({ r }) {
         <p className="text-slate-300">
           Status: {r.cargo_status ?? "—"}
         </p>
+        <p className="mt-1 text-slate-300">
+          Payment:{" "}
+          <span
+            className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${paymentTone(r.cargo_payment_status)}`}
+          >
+            {r.cargo_payment_status ?? "pending"}
+          </span>
+        </p>
         <p className="text-xs text-slate-500">
           Weight: {r.cargo_weight_kg ?? "—"} kg · Fee:{" "}
           {formatMoney(r.cargo_fee)}
@@ -66,10 +91,13 @@ function DetailRow({ r }) {
       </div>
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-          Owner
+          Passenger
         </p>
         <p className="text-slate-200">{r.owner_name ?? "—"}</p>
         <p className="text-xs text-slate-500">{r.owner_phone ?? ""}</p>
+        {r.owner_email ? (
+          <p className="text-xs text-slate-500">{r.owner_email}</p>
+        ) : null}
       </div>
       <div className="sm:col-span-2 lg:col-span-3">
         <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
@@ -104,22 +132,31 @@ const SORT_OPTIONS = [
   { value: "amount", label: "Amount" },
   { value: "cargo_id", label: "Cargo" },
   { value: "owner_name", label: "Owner" },
+  { value: "cargo_payment_status", label: "Payment status" },
   { value: "tracking_code", label: "Tracking" },
 ];
 
+const HEADER_SORT_KEYS = {
+  Id: "id",
+  Cargo: "cargo_id",
+  Amount: "amount",
+  Issued: "issued_at",
+  Passenger: "owner_name",
+  Payment: "cargo_payment_status",
+};
+
 export function AdminCargoReceiptsPage() {
   const [receipts, setReceipts] = useState([]);
-  const [users, setUsers] = useState([]);
   const [cargo, setCargo] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
   const [deleting, setDeleting] = useState(false);
   const [detailId, setDetailId] = useState(null);
   const [search, setSearch] = useState("");
+  const [filterPayment, setFilterPayment] = useState("");
   const [sortKey, setSortKey] = useState("issued_at");
   const [sortDir, setSortDir] = useState("desc");
 
@@ -134,8 +171,8 @@ export function AdminCargoReceiptsPage() {
         cargoReceiptsService.list(),
         cargoService.list(),
       ]);
-      setReceipts(Array.isArray(r) ? r : []);
-      setCargo(Array.isArray(c) ? c : []);
+      setReceipts(normalizeList(r));
+      setCargo(normalizeList(c));
     } catch (e) {
       setError(e?.message || "Failed to load");
     } finally {
@@ -165,6 +202,12 @@ export function AdminCargoReceiptsPage() {
   const filteredSorted = useMemo(() => {
     let rows = [...receipts];
     const q = search.trim().toLowerCase();
+    const pay = filterPayment.trim().toLowerCase();
+    if (pay) {
+      rows = rows.filter(
+        (r) => String(r?.cargo_payment_status ?? "").toLowerCase() === pay
+      );
+    }
     if (q) {
       rows = rows.filter((r) => {
         if (!r) return false;
@@ -176,9 +219,11 @@ export function AdminCargoReceiptsPage() {
           r?.tracking_code,
           r?.owner_name,
           r?.owner_phone,
+          r?.owner_email,
           r?.route_summary,
           r?.vehicle_plate,
           r?.cargo_status,
+          r?.cargo_payment_status,
           r?.cargo_content_brief,
           r?.brief_description,
           r?.trip_departure,
@@ -191,7 +236,6 @@ export function AdminCargoReceiptsPage() {
       });
     }
     const dir = sortDir === "asc" ? 1 : -1;
-    const key = sortKey;
     rows.sort((a, b) => {
       if (!a || !b) return 0;
       if (!sortKey) return 0;
@@ -226,7 +270,7 @@ export function AdminCargoReceiptsPage() {
       return 0;
     });
     return rows;
-  }, [receipts, search, sortKey, sortDir]);
+  }, [receipts, search, filterPayment, sortKey, sortDir]);
 
   function openEdit(x) {
     setEditingId(x.id);
@@ -246,6 +290,21 @@ export function AdminCargoReceiptsPage() {
   function toggleDetail(id) {
     setDetailId((cur) => (cur === id ? null : id));
     if (editingId === id) closeEdit();
+  }
+
+  function handleHeaderSort(key) {
+    if (!key) return;
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDir("asc");
+  }
+
+  function sortIndicator(key) {
+    if (sortKey !== key) return "";
+    return sortDir === "asc" ? " ↑" : " ↓";
   }
 
   async function handleUpdate(e) {
@@ -274,7 +333,6 @@ export function AdminCargoReceiptsPage() {
   }
 
   async function handleRemove(id) {
-    const receipt = receipts.find(r => r.id === id);
     setDeleteModal({ isOpen: true, id, name: `Receipt #${id}` });
   }
 
@@ -313,7 +371,7 @@ export function AdminCargoReceiptsPage() {
     }
   };
 
-  const colCount = 8;
+  const colCount = 9;
 
   if (loading && !receipts.length) {
     return (
@@ -359,6 +417,18 @@ export function AdminCargoReceiptsPage() {
             ))}
           </Select>
           <Select
+            label="Payment"
+            value={filterPayment}
+            onChange={(e) => setFilterPayment(e.target.value)}
+            className="min-w-[160px]"
+          >
+            <option value="">All statuses</option>
+            <option value="paid">Paid</option>
+            <option value="pending">Pending</option>
+            <option value="failed">Failed</option>
+            <option value="cancelled">Cancelled</option>
+          </Select>
+          <Select
             label="Order"
             value={sortDir}
             onChange={(e) => setSortDir(e.target.value)}
@@ -370,6 +440,18 @@ export function AdminCargoReceiptsPage() {
           <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
             Refresh
           </Button>
+          <Button
+            variant="ghost"
+            className="!text-xs"
+            onClick={() => {
+              setSearch("");
+              setFilterPayment("");
+              setSortKey("issued_at");
+              setSortDir("desc");
+            }}
+          >
+            Clear filters
+          </Button>
         </div>
         <p className="mb-2 text-xs text-slate-500">
           Showing {filteredSorted.length} of {receipts.length}
@@ -378,11 +460,26 @@ export function AdminCargoReceiptsPage() {
           <table className="w-full min-w-[880px] border-collapse text-left text-sm">
             <thead className="bg-slate-900/95 text-xs uppercase text-primary-400/90">
               <tr className="border-b border-primary-900/40">
-                <th className="px-2 py-2">Id</th>
-                <th className="px-2 py-2">Cargo</th>
-                <th className="px-2 py-2">Amount</th>
-                <th className="px-2 py-2">Issued</th>
-                <th className="px-2 py-2">Owner</th>
+                {["Id", "Cargo", "Amount", "Issued", "Passenger", "Payment"].map(
+                  (label) => {
+                    const key = HEADER_SORT_KEYS[label];
+                    return (
+                      <th key={label} className="px-2 py-2">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 hover:text-primary-300"
+                          onClick={() => handleHeaderSort(key)}
+                          title={`Sort by ${label}`}
+                        >
+                          {label}
+                          <span className="text-[10px] opacity-80">
+                            {sortIndicator(key)}
+                          </span>
+                        </button>
+                      </th>
+                    );
+                  }
+                )}
                 <th className="px-2 py-2">Download</th>
                 <th className="px-2 py-2">Details</th>
                 <th className="px-2 py-2">Actions</th>
@@ -428,6 +525,18 @@ export function AdminCargoReceiptsPage() {
                       </td>
                       <td className="max-w-[120px] truncate px-2 py-2 text-slate-400">
                         {String(r.owner_name ?? "").trim() || "—"}
+                        {r.owner_phone ? (
+                          <span className="block truncate text-[10px] text-slate-500">
+                            {r.owner_phone}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-2 py-2">
+                        <span
+                          className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${paymentTone(r.cargo_payment_status)}`}
+                        >
+                          {r.cargo_payment_status ?? "pending"}
+                        </span>
                       </td>
                       <td className="px-2 py-2">
                         <button

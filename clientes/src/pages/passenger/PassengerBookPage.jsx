@@ -13,6 +13,21 @@ function normalizeList(x) {
   return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
 }
 
+function isTripOpenForBooking(trip) {
+  const status = String(trip?.status ?? "").toLowerCase();
+  const allowedStatus =
+    status === "" ||
+    status === "scheduled" ||
+    status === "ongoing" ||
+    status === "open" ||
+    status === "active";
+  if (!allowedStatus) return false;
+
+  const ts = new Date(trip?.departure_time ?? "").getTime();
+  if (!Number.isFinite(ts)) return true;
+  return ts > Date.now();
+}
+
 export function PassengerBookPage() {
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,10 +45,31 @@ export function PassengerBookPage() {
     setError("");
     try {
       const raw = await tripsService.list();
-      setTrips(normalizeList(raw));
+      const tripRows = normalizeList(raw).filter(isTripOpenForBooking);
+      const withSeats = await Promise.all(
+        tripRows.map(async (trip) => {
+          const vid = Number(trip.vehicle_id);
+          const tid = Number(trip.id);
+          if (!Number.isFinite(vid) || !Number.isFinite(tid)) return null;
+          try {
+            const seatsRaw = await seatsService.availableByVehicle(vid, tid);
+            const available = normalizeList(seatsRaw);
+            if (!available.length) return null;
+            return trip;
+          } catch {
+            return null;
+          }
+        })
+      );
+      const filtered = withSeats.filter(Boolean);
+      setTrips(filtered);
+      setPickTrip((prev) =>
+        prev && filtered.some((t) => String(t.id) === String(prev.id)) ? prev : null
+      );
     } catch (e) {
       setError(e?.data?.message || e?.message || "Failed to load trips");
       setTrips([]);
+      setPickTrip(null);
     } finally {
       setLoading(false);
     }

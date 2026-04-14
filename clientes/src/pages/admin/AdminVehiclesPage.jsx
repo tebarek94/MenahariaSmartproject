@@ -1,5 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
-import { useAsync } from "@/hooks/useAsync.js";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { vehiclesService } from "@/services/vehicles.service.js";
 import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
@@ -12,6 +11,27 @@ import { DeleteModal } from "@/components/DeleteModal.jsx";
 import { formatDate } from "@/utils/format.js";
 
 const VEHICLE_STATUSES = ["active", "inactive", "maintenance"];
+const SORT_OPTIONS = [
+  { value: "id", label: "ID" },
+  { value: "plate_number", label: "Plate" },
+  { value: "model", label: "Model" },
+  { value: "capacity", label: "Capacity" },
+  { value: "status", label: "Status" },
+  { value: "created_at", label: "Created" },
+];
+
+const HEADER_SORT_KEYS = {
+  Id: "id",
+  Plate: "plate_number",
+  Model: "model",
+  Capacity: "capacity",
+  Status: "status",
+  Created: "created_at",
+};
+
+function normalizeList(x) {
+  return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
+}
 
 export function AdminVehiclesPage() {
   const [vehicles, setVehicles] = useState([]);
@@ -22,6 +42,10 @@ export function AdminVehiclesPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
   const [deleting, setDeleting] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [sortKey, setSortKey] = useState("created_at");
+  const [sortDir, setSortDir] = useState("desc");
 
   const [cPlate, setCPlate] = useState("");
   const [cModel, setCModel] = useState("");
@@ -41,7 +65,7 @@ export function AdminVehiclesPage() {
     setError("");
     try {
       const rows = await vehiclesService.list();
-      setVehicles(Array.isArray(rows) ? rows : []);
+      setVehicles(normalizeList(rows));
     } catch (e) {
       setError(e?.message || "Failed to load vehicles");
     } finally {
@@ -170,6 +194,69 @@ export function AdminVehiclesPage() {
     }
   };
 
+  const filteredSorted = useMemo(() => {
+    let rows = [...vehicles];
+    const q = search.trim().toLowerCase();
+    const statusQ = filterStatus.trim().toLowerCase();
+
+    if (statusQ) {
+      rows = rows.filter(
+        (v) => String(v?.status ?? "").toLowerCase() === statusQ
+      );
+    }
+
+    if (q) {
+      rows = rows.filter((v) => {
+        const parts = [
+          v?.id,
+          v?.plate_number,
+          v?.model,
+          v?.capacity,
+          v?.status,
+          v?.created_at,
+        ]
+          .filter((x) => x != null && x !== "")
+          .map((x) => String(x).toLowerCase());
+        return parts.some((s) => s.includes(q));
+      });
+    }
+
+    const dir = sortDir === "asc" ? 1 : -1;
+    rows.sort((a, b) => {
+      let va = a?.[sortKey];
+      let vb = b?.[sortKey];
+      if (["id", "capacity"].includes(sortKey)) {
+        va = Number(va) || 0;
+        vb = Number(vb) || 0;
+      } else if (sortKey === "created_at") {
+        va = va ? new Date(va).getTime() : 0;
+        vb = vb ? new Date(vb).getTime() : 0;
+      } else {
+        va = String(va ?? "").toLowerCase();
+        vb = String(vb ?? "").toLowerCase();
+      }
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+    return rows;
+  }, [vehicles, search, filterStatus, sortKey, sortDir]);
+
+  function handleHeaderSort(key) {
+    if (!key) return;
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDir("asc");
+  }
+
+  function sortIndicator(key) {
+    if (sortKey !== key) return "↕";
+    return sortDir === "asc" ? "↑" : "↓";
+  }
+
   function openEdit(v) {
     setEditingId(v.id);
     setEditForm({
@@ -261,21 +348,91 @@ export function AdminVehiclesPage() {
       </Card>
 
       <Card title="Fleet">
-        <div className="mb-3">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <Input
+            label="Search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="ID, plate, model, capacity, status..."
+            className="min-w-[220px] sm:flex-1"
+          />
+          <Select
+            label="Status"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="min-w-[140px]"
+          >
+            <option value="">All statuses</option>
+            {VEHICLE_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Sort by"
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value)}
+            className="min-w-[140px]"
+          >
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Order"
+            value={sortDir}
+            onChange={(e) => setSortDir(e.target.value)}
+            className="min-w-[120px]"
+          >
+            <option value="desc">Desc</option>
+            <option value="asc">Asc</option>
+          </Select>
           <Button variant="ghost" className="!text-xs" onClick={() => refreshList()}>
             Refresh
           </Button>
+          <Button
+            variant="ghost"
+            className="!text-xs"
+            onClick={() => {
+              setSearch("");
+              setFilterStatus("");
+              setSortKey("created_at");
+              setSortDir("desc");
+            }}
+          >
+            Clear
+          </Button>
         </div>
+        <p className="mb-2 text-xs text-slate-500">
+          Showing {filteredSorted.length} of {vehicles.length}
+        </p>
         <div className="overflow-x-auto rounded-lg border border-primary-900/30">
           <table className="w-full min-w-[640px] border-collapse text-left text-sm">
             <thead className="sticky top-0 bg-slate-900/95 text-xs uppercase text-primary-400/90">
               <tr className="border-b border-primary-900/40">
-                <th className="px-3 py-2 font-semibold">Id</th>
-                <th className="px-3 py-2 font-semibold">Plate</th>
-                <th className="px-3 py-2 font-semibold">Model</th>
-                <th className="px-3 py-2 font-semibold">Capacity</th>
-                <th className="px-3 py-2 font-semibold">Status</th>
-                <th className="px-3 py-2 font-semibold">Created</th>
+                {["Id", "Plate", "Model", "Capacity", "Status", "Created"].map(
+                  (label) => {
+                    const key = HEADER_SORT_KEYS[label];
+                    return (
+                      <th key={label} className="px-3 py-2 font-semibold">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 hover:text-primary-300"
+                          onClick={() => handleHeaderSort(key)}
+                          title={`Sort by ${label}`}
+                        >
+                          <span>{label}</span>
+                          <span className="w-3 text-center text-[10px]">
+                            {sortIndicator(key)}
+                          </span>
+                        </button>
+                      </th>
+                    );
+                  }
+                )}
                 <th className="px-3 py-2 font-semibold">Actions</th>
               </tr>
             </thead>
@@ -289,8 +446,17 @@ export function AdminVehiclesPage() {
                     No vehicles
                   </td>
                 </tr>
+              ) : filteredSorted.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="px-3 py-8 text-center text-slate-500"
+                  >
+                    No rows match your filters
+                  </td>
+                </tr>
               ) : (
-                vehicles.map((v) => (
+                filteredSorted.map((v) => (
                   <Fragment key={v.id}>
                     <tr className="bg-slate-950/30 hover:bg-slate-800/30">
                       <td className="px-3 py-2 font-mono text-xs text-slate-400">

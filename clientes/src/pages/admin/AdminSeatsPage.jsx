@@ -13,6 +13,22 @@ import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
 import { DeleteModal } from "@/components/DeleteModal.jsx";
 
+const SORT_OPTIONS = [
+  { value: "id", label: "ID" },
+  { value: "vehicle_id", label: "Vehicle" },
+  { value: "seat_number", label: "Seat #" },
+];
+
+const HEADER_SORT_KEYS = {
+  Id: "id",
+  Vehicle: "vehicle_id",
+  "Seat #": "seat_number",
+};
+
+function normalizeList(x) {
+  return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
+}
+
 export function AdminSeatsPage() {
   const relationsView = useAsync(() => viewsService.seatsRelations(150));
 
@@ -25,6 +41,9 @@ export function AdminSeatsPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
   const [deleting, setDeleting] = useState(false);
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState("id");
+  const [sortDir, setSortDir] = useState("asc");
 
   const [cVehicle, setCVehicle] = useState("");
   const [cNum, setCNum] = useState("");
@@ -46,8 +65,8 @@ export function AdminSeatsPage() {
         seatsService.list(),
         vehiclesService.list(),
       ]);
-      setSeats(Array.isArray(s) ? s : []);
-      setVehicles(Array.isArray(v) ? v : []);
+      setSeats(normalizeList(s));
+      setVehicles(normalizeList(v));
     } catch (e) {
       setError(e?.message || "Failed to load seats");
     } finally {
@@ -103,9 +122,46 @@ export function AdminSeatsPage() {
     return seats.filter((s) => Number(s.vehicle_id) === tableSelection);
   }, [seats, tableSelection]);
 
+  const filteredSortedRows = useMemo(() => {
+    let rows = [...tableRows];
+    const q = search.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((s) => {
+        const parts = [s?.id, s?.vehicle_id, s?.seat_number]
+          .filter((x) => x != null && x !== "")
+          .map((x) => String(x).toLowerCase());
+        return parts.some((v) => v.includes(q));
+      });
+    }
+    const dir = sortDir === "asc" ? 1 : -1;
+    rows.sort((a, b) => {
+      const va = Number(a?.[sortKey]) || 0;
+      const vb = Number(b?.[sortKey]) || 0;
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+    return rows;
+  }, [tableRows, search, sortKey, sortDir]);
+
   function toggleTableSelection(key) {
     setTableSelection((cur) => (cur === key ? null : key));
     closeEdit();
+  }
+
+  function handleHeaderSort(key) {
+    if (!key) return;
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDir("asc");
+  }
+
+  function sortIndicator(key) {
+    if (sortKey !== key) return "↕";
+    return sortDir === "asc" ? "↑" : "↓";
   }
 
   useEffect(() => {
@@ -188,7 +244,6 @@ export function AdminSeatsPage() {
   }
 
   async function handleRemove(id) {
-    const seat = seats.find(s => s.id === id);
     setDeleteModal({ isOpen: true, id, name: `Seat #${id}` });
   }
 
@@ -286,9 +341,48 @@ export function AdminSeatsPage() {
         title="All seats"
         subtitle="Click a vehicle card (or “All vehicles”) to open the detailed table. Click again to hide."
       >
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <Input
+            label="Search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="ID, vehicle, seat number..."
+            className="min-w-[220px] sm:flex-1"
+          />
+          <Select
+            label="Sort by"
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value)}
+            className="min-w-[130px]"
+          >
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Order"
+            value={sortDir}
+            onChange={(e) => setSortDir(e.target.value)}
+            className="min-w-[120px]"
+          >
+            <option value="asc">Asc</option>
+            <option value="desc">Desc</option>
+          </Select>
           <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
             Refresh
+          </Button>
+          <Button
+            variant="ghost"
+            className="!text-xs"
+            onClick={() => {
+              setSearch("");
+              setSortKey("id");
+              setSortDir("asc");
+            }}
+          >
+            Clear
           </Button>
           {tableSelection != null ? (
             <Button
@@ -312,8 +406,8 @@ export function AdminSeatsPage() {
         ) : (
           <p className="mb-3 text-sm text-primary-200/90">
             {tableSelection === "all"
-              ? `Showing all ${tableRows.length} seat(s).`
-              : `Showing ${tableRows.length} seat(s) for vehicle #${tableSelection}.`}
+              ? `Showing ${filteredSortedRows.length} of ${tableRows.length} seat(s).`
+              : `Showing ${filteredSortedRows.length} of ${tableRows.length} seat(s) for vehicle #${tableSelection}.`}
           </p>
         )}
 
@@ -366,9 +460,24 @@ export function AdminSeatsPage() {
               <table className="w-full min-w-[480px] border-collapse text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-slate-900/95 text-xs uppercase text-primary-400/90 shadow-[0_1px_0_0_rgba(15,23,42,0.9)] backdrop-blur-sm">
                   <tr className="border-b border-primary-900/40">
-                    <th className="px-2 py-1.5">Id</th>
-                    <th className="px-2 py-1.5">Vehicle</th>
-                    <th className="px-2 py-1.5">Seat #</th>
+                    {["Id", "Vehicle", "Seat #"].map((label) => {
+                      const key = HEADER_SORT_KEYS[label];
+                      return (
+                        <th key={label} className="px-2 py-1.5">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 hover:text-primary-300"
+                            onClick={() => handleHeaderSort(key)}
+                            title={`Sort by ${label}`}
+                          >
+                            <span>{label}</span>
+                            <span className="w-3 text-center text-[10px]">
+                              {sortIndicator(key)}
+                            </span>
+                          </button>
+                        </th>
+                      );
+                    })}
                     <th className="px-2 py-1.5">Actions</th>
                   </tr>
                 </thead>
@@ -382,8 +491,17 @@ export function AdminSeatsPage() {
                         No seats in this view
                       </td>
                     </tr>
+                  ) : filteredSortedRows.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="px-3 py-8 text-center text-slate-500"
+                      >
+                        No rows match your search
+                      </td>
+                    </tr>
                   ) : (
-                    tableRows.map((s) => (
+                    filteredSortedRows.map((s) => (
                       <Fragment key={s.id}>
                         <tr
                           id={`seat-row-${s.id}`}

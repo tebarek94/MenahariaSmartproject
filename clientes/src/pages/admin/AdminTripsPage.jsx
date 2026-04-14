@@ -14,6 +14,31 @@ import { DeleteModal } from "@/components/DeleteModal.jsx";
 import { formatDate, localInputToSqlDatetime, toDatetimeLocalValue } from "@/utils/format.js";
 
 const TRIP_STATUSES = ["scheduled", "ongoing", "completed", "cancelled"];
+const SORT_OPTIONS = [
+  { value: "id", label: "ID" },
+  { value: "route", label: "Route" },
+  { value: "vehicle", label: "Vehicle" },
+  { value: "driver", label: "Driver" },
+  { value: "departure_time", label: "Departure" },
+  { value: "arrival_time", label: "Arrival" },
+  { value: "price", label: "Price" },
+  { value: "status", label: "Status" },
+];
+
+const HEADER_SORT_KEYS = {
+  Id: "id",
+  Route: "route",
+  Vehicle: "vehicle",
+  Driver: "driver",
+  Departure: "departure_time",
+  Arrival: "arrival_time",
+  Price: "price",
+  Status: "status",
+};
+
+function normalizeList(x) {
+  return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
+}
 
 /** Plate + model for selects and tables (no raw id in the label). */
 function vehicleDisplayName(v) {
@@ -42,6 +67,10 @@ export function AdminTripsPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
   const [deleting, setDeleting] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [sortKey, setSortKey] = useState("departure_time");
+  const [sortDir, setSortDir] = useState("desc");
 
   const [cRoute, setCRoute] = useState("");
   const [cVehicle, setCVehicle] = useState("");
@@ -72,10 +101,10 @@ export function AdminTripsPage() {
         vehiclesService.list(),
         adminUsersService.list(),
       ]);
-      setTrips(Array.isArray(t) ? t : []);
-      setRoutes(Array.isArray(rt) ? rt : []);
-      setVehicles(Array.isArray(v) ? v : []);
-      setUsers(Array.isArray(u) ? u : []);
+      setTrips(normalizeList(t));
+      setRoutes(normalizeList(rt));
+      setVehicles(normalizeList(v));
+      setUsers(normalizeList(u));
     } catch (e) {
       setError(e?.message || "Failed to load");
     } finally {
@@ -142,6 +171,89 @@ export function AdminTripsPage() {
     const u = userById.get(Number(driverId));
     const label = driverDisplayName(u);
     return label || `Driver #${driverId}`;
+  }
+
+  const filteredSorted = useMemo(() => {
+    let rows = [...trips];
+    const q = search.trim().toLowerCase();
+    const statusQ = filterStatus.trim().toLowerCase();
+
+    if (statusQ) {
+      rows = rows.filter(
+        (t) => String(t?.status ?? "").toLowerCase() === statusQ
+      );
+    }
+
+    if (q) {
+      rows = rows.filter((t) => {
+        const parts = [
+          t?.id,
+          t?.route_id,
+          t?.vehicle_id,
+          t?.driver_id,
+          t?.departure_time,
+          t?.arrival_time,
+          t?.price,
+          t?.status,
+          tripRouteLabel(t?.route_id),
+          tripVehicleLabel(t?.vehicle_id),
+          tripDriverLabel(t?.driver_id),
+        ]
+          .filter((x) => x != null && x !== "")
+          .map((x) => String(x).toLowerCase());
+        return parts.some((s) => s.includes(q));
+      });
+    }
+
+    const dir = sortDir === "asc" ? 1 : -1;
+    rows.sort((a, b) => {
+      let va;
+      let vb;
+      if (sortKey === "route") {
+        va = tripRouteLabel(a?.route_id).toLowerCase();
+        vb = tripRouteLabel(b?.route_id).toLowerCase();
+      } else if (sortKey === "vehicle") {
+        va = tripVehicleLabel(a?.vehicle_id).toLowerCase();
+        vb = tripVehicleLabel(b?.vehicle_id).toLowerCase();
+      } else if (sortKey === "driver") {
+        va = tripDriverLabel(a?.driver_id).toLowerCase();
+        vb = tripDriverLabel(b?.driver_id).toLowerCase();
+      } else {
+        va = a?.[sortKey];
+        vb = b?.[sortKey];
+      }
+
+      if (["id", "price"].includes(sortKey)) {
+        va = Number(va) || 0;
+        vb = Number(vb) || 0;
+      } else if (["departure_time", "arrival_time"].includes(sortKey)) {
+        va = va ? new Date(va).getTime() : 0;
+        vb = vb ? new Date(vb).getTime() : 0;
+      } else {
+        va = String(va ?? "").toLowerCase();
+        vb = String(vb ?? "").toLowerCase();
+      }
+
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+    return rows;
+  }, [trips, search, filterStatus, sortKey, sortDir, routeById, vehicleById, userById]);
+
+  function handleHeaderSort(key) {
+    if (!key) return;
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDir("asc");
+  }
+
+  function sortIndicator(key) {
+    if (sortKey !== key) return "↕";
+    return sortDir === "asc" ? "↑" : "↓";
   }
 
   function openEdit(x) {
@@ -263,7 +375,6 @@ export function AdminTripsPage() {
   }
 
   async function handleRemove(id) {
-    const trip = trips.find(t => t.id === id);
     setDeleteModal({ isOpen: true, id, name: `Trip #${id}` });
   }
 
@@ -408,23 +519,98 @@ export function AdminTripsPage() {
       </Card>
 
       <Card title="All trips">
-        <div className="mb-3">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <Input
+            label="Search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="ID, route, vehicle, driver, status, time..."
+            className="min-w-[240px] sm:flex-1"
+          />
+          <Select
+            label="Status"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="min-w-[150px]"
+          >
+            <option value="">All statuses</option>
+            {TRIP_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Sort by"
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value)}
+            className="min-w-[150px]"
+          >
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Order"
+            value={sortDir}
+            onChange={(e) => setSortDir(e.target.value)}
+            className="min-w-[120px]"
+          >
+            <option value="desc">Desc</option>
+            <option value="asc">Asc</option>
+          </Select>
           <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
             Refresh
           </Button>
+          <Button
+            variant="ghost"
+            className="!text-xs"
+            onClick={() => {
+              setSearch("");
+              setFilterStatus("");
+              setSortKey("departure_time");
+              setSortDir("desc");
+            }}
+          >
+            Clear
+          </Button>
         </div>
+        <p className="mb-2 text-xs text-slate-500">
+          Showing {filteredSorted.length} of {trips.length}
+        </p>
         <div className="overflow-x-auto rounded-lg border border-primary-900/30">
           <table className="w-full min-w-[1040px] border-collapse text-left text-sm">
             <thead className="bg-slate-900/95 text-xs uppercase text-primary-400/90">
               <tr className="border-b border-primary-900/40">
-                <th className="px-2 py-2">Id</th>
-                <th className="px-2 py-2">Route</th>
-                <th className="px-2 py-2">Vehicle</th>
-                <th className="px-2 py-2">Driver</th>
-                <th className="px-2 py-2">Departure</th>
-                <th className="px-2 py-2">Arrival</th>
-                <th className="px-2 py-2">Price</th>
-                <th className="px-2 py-2">Status</th>
+                {[
+                  "Id",
+                  "Route",
+                  "Vehicle",
+                  "Driver",
+                  "Departure",
+                  "Arrival",
+                  "Price",
+                  "Status",
+                ].map((label) => {
+                  const key = HEADER_SORT_KEYS[label];
+                  return (
+                    <th key={label} className="px-2 py-2">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 hover:text-primary-300"
+                        onClick={() => handleHeaderSort(key)}
+                        title={`Sort by ${label}`}
+                      >
+                        <span>{label}</span>
+                        <span className="w-3 text-center text-[10px]">
+                          {sortIndicator(key)}
+                        </span>
+                      </button>
+                    </th>
+                  );
+                })}
                 <th className="px-2 py-2">Actions</th>
               </tr>
             </thead>
@@ -435,8 +621,14 @@ export function AdminTripsPage() {
                     No trips
                   </td>
                 </tr>
+              ) : filteredSorted.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-3 py-8 text-center text-slate-500">
+                    No rows match your filters
+                  </td>
+                </tr>
               ) : (
-                trips.map((t) => (
+                filteredSorted.map((t) => (
                   <Fragment key={t.id}>
                     <tr className="hover:bg-slate-800/30">
                       <td className="px-2 py-2 font-mono text-xs">{t.id}</td>

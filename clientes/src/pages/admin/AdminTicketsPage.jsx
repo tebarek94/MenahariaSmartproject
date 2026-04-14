@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useAsync } from "@/hooks/useAsync.js";
 import { ticketsService } from "@/services/tickets.service.js";
 import { tripsService } from "@/services/trips.service.js";
@@ -24,6 +24,31 @@ const TICKET_STATUSES = [
   "used",
 ];
 const PAYMENT_STATUSES = ["pending", "completed", "failed", "refunded"];
+const SORT_OPTIONS = [
+  { value: "id", label: "ID" },
+  { value: "passenger", label: "Passenger" },
+  { value: "route", label: "Route" },
+  { value: "trip_id", label: "Trip" },
+  { value: "seat_id", label: "Seat" },
+  { value: "status", label: "Status" },
+  { value: "payment_status", label: "Payment" },
+  { value: "issued_at", label: "Issued" },
+];
+
+const HEADER_SORT_KEYS = {
+  Id: "id",
+  Passenger: "passenger",
+  Route: "route",
+  Trip: "trip_id",
+  Seat: "seat_id",
+  Status: "status",
+  Pay: "payment_status",
+  Issued: "issued_at",
+};
+
+function normalizeList(x) {
+  return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
+}
 
 export function AdminTicketsPage() {
   const relationsView = useAsync(() => viewsService.ticketsRelations(100));
@@ -40,6 +65,11 @@ export function AdminTicketsPage() {
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
   const [deleting, setDeleting] = useState(false);
   const [generatingDownload, setGeneratingDownload] = useState(null);
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterPayment, setFilterPayment] = useState("");
+  const [sortKey, setSortKey] = useState("issued_at");
+  const [sortDir, setSortDir] = useState("desc");
 
   const [cUserId, setCUserId] = useState("");
   const [cTripId, setCTripId] = useState("");
@@ -66,9 +96,9 @@ export function AdminTicketsPage() {
         adminUsersService.listPassengers(),
         tripsService.list(),
       ]);
-      setTickets(Array.isArray(t) ? t : []);
-      setPassengers(Array.isArray(u) ? u : []);
-      setTrips(Array.isArray(tr) ? tr : []);
+      setTickets(normalizeList(t));
+      setPassengers(normalizeList(u));
+      setTrips(normalizeList(tr));
     } catch (e) {
       setError(e?.message || "Failed to load tickets");
     } finally {
@@ -295,6 +325,94 @@ export function AdminTicketsPage() {
     }
   };
 
+  const filteredSorted = useMemo(() => {
+    let rows = [...tickets];
+    const q = search.trim().toLowerCase();
+    const statusQ = filterStatus.trim().toLowerCase();
+    const payQ = filterPayment.trim().toLowerCase();
+
+    if (statusQ) {
+      rows = rows.filter(
+        (t) => String(t?.status ?? "").toLowerCase() === statusQ
+      );
+    }
+    if (payQ) {
+      rows = rows.filter(
+        (t) => String(t?.payment_status ?? "").toLowerCase() === payQ
+      );
+    }
+
+    if (q) {
+      rows = rows.filter((t) => {
+        const routeText =
+          t?.origin && t?.destination ? `${t.origin} ${t.destination}` : "";
+        const parts = [
+          t?.id,
+          t?.passenger_name,
+          routeText,
+          t?.trip_id,
+          t?.seat_id,
+          t?.ticket_code,
+          t?.status,
+          t?.payment_status,
+          t?.issued_at,
+          t?.qr_code_used ? "used" : "not used",
+        ]
+          .filter((x) => x != null && x !== "")
+          .map((x) => String(x).toLowerCase());
+        return parts.some((s) => s.includes(q));
+      });
+    }
+
+    const dir = sortDir === "asc" ? 1 : -1;
+    rows.sort((a, b) => {
+      let va;
+      let vb;
+      if (sortKey === "passenger") {
+        va = String(a?.passenger_name ?? "").toLowerCase();
+        vb = String(b?.passenger_name ?? "").toLowerCase();
+      } else if (sortKey === "route") {
+        va = String(`${a?.origin ?? ""} ${a?.destination ?? ""}`).toLowerCase();
+        vb = String(`${b?.origin ?? ""} ${b?.destination ?? ""}`).toLowerCase();
+      } else {
+        va = a?.[sortKey];
+        vb = b?.[sortKey];
+      }
+
+      if (["id", "trip_id", "seat_id"].includes(sortKey)) {
+        va = Number(va) || 0;
+        vb = Number(vb) || 0;
+      } else if (sortKey === "issued_at") {
+        va = va ? new Date(va).getTime() : 0;
+        vb = vb ? new Date(vb).getTime() : 0;
+      } else {
+        va = String(va ?? "").toLowerCase();
+        vb = String(vb ?? "").toLowerCase();
+      }
+
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+
+    return rows;
+  }, [tickets, search, filterStatus, filterPayment, sortKey, sortDir]);
+
+  function handleHeaderSort(key) {
+    if (!key) return;
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDir("asc");
+  }
+
+  function sortIndicator(key) {
+    if (sortKey !== key) return "↕";
+    return sortDir === "asc" ? "↑" : "↓";
+  }
+
   if (loading && !tickets.length && !trips.length) {
     return (
       <div className="flex justify-center py-20">
@@ -410,24 +528,122 @@ export function AdminTicketsPage() {
       </Card>
 
       <Card title="All tickets">
-        <div className="mb-3">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <Input
+            label="Search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="ID, passenger, route, trip, seat, code..."
+            className="min-w-[240px] sm:flex-1"
+          />
+          <Select
+            label="Status"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="min-w-[140px]"
+          >
+            <option value="">All statuses</option>
+            {TICKET_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Payment"
+            value={filterPayment}
+            onChange={(e) => setFilterPayment(e.target.value)}
+            className="min-w-[140px]"
+          >
+            <option value="">All payments</option>
+            {PAYMENT_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Sort by"
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value)}
+            className="min-w-[140px]"
+          >
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Order"
+            value={sortDir}
+            onChange={(e) => setSortDir(e.target.value)}
+            className="min-w-[120px]"
+          >
+            <option value="desc">Desc</option>
+            <option value="asc">Asc</option>
+          </Select>
           <Button variant="ghost" className="!text-xs" onClick={() => refreshCore()}>
             Refresh list
           </Button>
+          <Button
+            variant="ghost"
+            className="!text-xs"
+            onClick={() => {
+              setSearch("");
+              setFilterStatus("");
+              setFilterPayment("");
+              setSortKey("issued_at");
+              setSortDir("desc");
+            }}
+          >
+            Clear
+          </Button>
         </div>
+        <p className="mb-2 text-xs text-slate-500">
+          Showing {filteredSorted.length} of {tickets.length}
+        </p>
         <div className="overflow-x-auto rounded-lg border border-primary-900/30">
           <table className="w-full min-w-[900px] border-collapse text-left text-sm">
             <thead className="sticky top-0 bg-slate-900/95 text-xs uppercase text-primary-400/90">
               <tr className="border-b border-primary-900/40">
-                <th className="px-2 py-2 font-semibold">Id</th>
-                <th className="px-2 py-2 font-semibold">Passenger</th>
-                <th className="px-2 py-2 font-semibold">Route</th>
-                <th className="px-2 py-2 font-semibold">Trip</th>
-                <th className="px-2 py-2 font-semibold">Seat</th>
+                {["Id", "Passenger", "Route", "Trip", "Seat"].map((label) => {
+                  const key = HEADER_SORT_KEYS[label];
+                  return (
+                    <th key={label} className="px-2 py-2 font-semibold">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 hover:text-primary-300"
+                        onClick={() => handleHeaderSort(key)}
+                        title={`Sort by ${label}`}
+                      >
+                        <span>{label}</span>
+                        <span className="w-3 text-center text-[10px]">
+                          {sortIndicator(key)}
+                        </span>
+                      </button>
+                    </th>
+                  );
+                })}
                 <th className="px-2 py-2 font-semibold">Code</th>
-                <th className="px-2 py-2 font-semibold">Status</th>
-                <th className="px-2 py-2 font-semibold">Pay</th>
-                <th className="px-2 py-2 font-semibold">Issued</th>
+                {["Status", "Pay", "Issued"].map((label) => {
+                  const key = HEADER_SORT_KEYS[label];
+                  return (
+                    <th key={label} className="px-2 py-2 font-semibold">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 hover:text-primary-300"
+                        onClick={() => handleHeaderSort(key)}
+                        title={`Sort by ${label}`}
+                      >
+                        <span>{label}</span>
+                        <span className="w-3 text-center text-[10px]">
+                          {sortIndicator(key)}
+                        </span>
+                      </button>
+                    </th>
+                  );
+                })}
                 <th className="px-2 py-2 font-semibold">QR</th>
                 <th className="px-2 py-2 font-semibold">Actions</th>
               </tr>
@@ -442,8 +658,17 @@ export function AdminTicketsPage() {
                     No tickets
                   </td>
                 </tr>
+              ) : filteredSorted.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={11}
+                    className="px-3 py-8 text-center text-slate-500"
+                  >
+                    No rows match your filters
+                  </td>
+                </tr>
               ) : (
-                tickets.map((t) => (
+                filteredSorted.map((t) => (
                   <Fragment key={t.id}>
                     <tr className="bg-slate-950/30 hover:bg-slate-800/30">
                       <td className="px-2 py-2 font-mono text-xs text-slate-400">

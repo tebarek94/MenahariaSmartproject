@@ -9,9 +9,11 @@ const receiptBriefSelect = `
   c.weight AS cargo_weight_kg,
   c.fee AS cargo_fee,
   c.status AS cargo_status,
+  c.payment_status AS cargo_payment_status,
   c.content AS cargo_content_brief,
   o.full_name AS owner_name,
   o.phone AS owner_phone,
+  o.email AS owner_email,
   CONCAT(IFNULL(r.origin,''), ' → ', IFNULL(r.destination,'')) AS route_summary,
   v.plate_number AS vehicle_plate,
   DATE_FORMAT(t.departure_time, '%Y-%m-%d %H:%i') AS trip_departure

@@ -24,7 +24,8 @@
     font-size: 18px;
   }
   body {
-    @apply min-h-dvh antialiased transition-colors duration-200;
+    @apply min-h-dvh antialiased tracking-[0.005em] transition-colors duration-200;
+    line-height: 1.55;
   }
   html:not(.dark) body {
     @apply bg-appbg text-apptext;
@@ -59,6 +60,14 @@
     @apply text-slate-300;
   }
 
+  .text-card-title {
+    @apply text-base font-semibold leading-tight tracking-tight text-white sm:text-lg;
+  }
+
+  .text-card-subtitle {
+    @apply text-sm leading-relaxed text-slate-300 sm:text-[0.95rem];
+  }
+
   .admin-theme-light .card-surface {
     background: #ffffff;
     color: #333333;
@@ -75,12 +84,26 @@
   }
 
   .ui-label {
-    @apply text-sm font-medium text-slate-300;
+    @apply text-[0.82rem] font-semibold tracking-[0.01em] text-slate-300;
   }
 
   .ui-field {
-    @apply w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500;
+    @apply w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-[0.95rem] leading-6 text-slate-100 placeholder:text-slate-500;
     @apply focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500;
+  }
+
+  .ui-select {
+    appearance: none;
+    padding-right: 2.3rem;
+    background-repeat: no-repeat;
+    background-position: right 0.8rem center;
+    background-size: 0.95rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='2' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E");
+  }
+
+  .ui-field option {
+    background-color: #0f172a;
+    color: #e2e8f0;
   }
 
   .ui-field-error {
@@ -132,7 +155,7 @@
   }
 
   .ui-table-head-cell {
-    @apply whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-primary-400/90;
+    @apply whitespace-nowrap px-3 py-2.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-primary-400/90;
   }
 
   .ui-table-body {
@@ -144,7 +167,15 @@
   }
 
   .ui-table-cell {
-    @apply max-w-[min(280px,40vw)] truncate px-3 py-2 text-slate-300 md:max-w-xs;
+    @apply max-w-[min(280px,40vw)] truncate px-3 py-2 text-sm leading-relaxed text-slate-300 md:max-w-xs;
+  }
+
+  .admin-theme-light .text-card-title {
+    @apply text-apptext;
+  }
+
+  .admin-theme-light .text-card-subtitle {
+    @apply text-slate-600;
   }
 
   .admin-theme-light .ui-label {
@@ -157,6 +188,15 @@
 
   .admin-theme-light .ui-field::placeholder {
     color: #94a3b8;
+  }
+
+  .admin-theme-light .ui-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='2' stroke='%2364758b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E");
+  }
+
+  .admin-theme-light .ui-field option {
+    background-color: #ffffff;
+    color: #334155;
   }
 
   .admin-theme-light .ui-btn-ghost {

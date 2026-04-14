@@ -133,3 +133,24 @@ export function RefreshCwIcon({ className }) {
     </svg>
   );
 }
+
+export function ChartTrendIcon({ className }) {
+  return (
+    <svg
+      className={className}
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M3 3v18h18" />
+      <path d="M7 14l4-4 3 3 5-6" />
+      <path d="M19 7h-3V4" />
+    </svg>
+  );
+}

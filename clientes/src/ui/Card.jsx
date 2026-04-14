@@ -11,10 +11,10 @@ export function Card({ children, className, title, subtitle }) {
       {(title || subtitle) && (
         <div className="mb-4 border-b border-primary-900/25 pb-4">
           {title ? (
-            <h2 className="text-lg font-semibold sm:text-xl">{title}</h2>
+            <h2 className="text-card-title">{title}</h2>
           ) : null}
           {subtitle ? (
-            <p className="mt-1 text-sm leading-relaxed sm:text-base">{subtitle}</p>
+            <p className="text-card-subtitle mt-1">{subtitle}</p>
           ) : null}
         </div>
       )}

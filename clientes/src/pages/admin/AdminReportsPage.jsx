@@ -15,6 +15,28 @@ function normalizeList(x) {
   return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
 }
 
+const SORT_OPTIONS = [
+  { value: "id", label: "ID" },
+  { value: "type", label: "Type" },
+  { value: "summary", label: "Summary" },
+  { value: "source", label: "Source" },
+  { value: "status", label: "Status" },
+  { value: "date_range", label: "Range" },
+  { value: "file_path", label: "File" },
+  { value: "created_at", label: "When" },
+];
+
+const HEADER_SORT_KEYS = {
+  Id: "id",
+  Type: "type",
+  Summary: "summary",
+  Source: "source",
+  Status: "status",
+  Range: "date_range",
+  File: "file_path",
+  When: "created_at",
+};
+
 export function AdminReportsPage() {
   const [rows, setRows] = useState([]);
   const [users, setUsers] = useState([]);
@@ -27,6 +49,9 @@ export function AdminReportsPage() {
 
   const [filterStatus, setFilterStatus] = useState("");
   const [filterSource, setFilterSource] = useState("");
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState("created_at");
+  const [sortDir, setSortDir] = useState("desc");
 
   const [cType, setCType] = useState("");
   const [cRange, setCRange] = useState("");
@@ -84,6 +109,62 @@ export function AdminReportsPage() {
       ),
     [users]
   );
+
+  const filteredSortedRows = useMemo(() => {
+    let list = [...rows];
+    const q = search.trim().toLowerCase();
+    if (q) {
+      list = list.filter((r) => {
+        const parts = [
+          r?.id,
+          r?.type,
+          r?.summary,
+          r?.source,
+          r?.status,
+          r?.date_range,
+          r?.file_path,
+          r?.created_at,
+        ]
+          .filter((x) => x != null && x !== "")
+          .map((x) => String(x).toLowerCase());
+        return parts.some((s) => s.includes(q));
+      });
+    }
+    const dir = sortDir === "asc" ? 1 : -1;
+    list.sort((a, b) => {
+      let va = a?.[sortKey];
+      let vb = b?.[sortKey];
+      if (sortKey === "id") {
+        va = Number(va) || 0;
+        vb = Number(vb) || 0;
+      } else if (sortKey === "created_at") {
+        va = va ? new Date(va).getTime() : 0;
+        vb = vb ? new Date(vb).getTime() : 0;
+      } else {
+        va = String(va ?? "").toLowerCase();
+        vb = String(vb ?? "").toLowerCase();
+      }
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+    return list;
+  }, [rows, search, sortKey, sortDir]);
+
+  function handleHeaderSort(key) {
+    if (!key) return;
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDir("asc");
+  }
+
+  function sortIndicator(key) {
+    if (sortKey !== key) return "↕";
+    return sortDir === "asc" ? "↑" : "↓";
+  }
 
   function openEdit(x) {
     setEditingId(x.id);
@@ -260,6 +341,13 @@ export function AdminReportsPage() {
         subtitle="Rows with source “auto” are created when users register, admins create users, or trips / tickets / cargo are created. Run DB migration 005 if inserts fail."
       >
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <Input
+            label="Search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="ID, type, summary, source, status, file..."
+            className="min-w-[220px] sm:flex-1"
+          />
           <Select
             label="Status"
             value={filterStatus}
@@ -280,10 +368,45 @@ export function AdminReportsPage() {
             <option value="manual">Manual</option>
             <option value="auto">Auto (tasks)</option>
           </Select>
+          <Select
+            label="Sort by"
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value)}
+            className="min-w-[140px]"
+          >
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Order"
+            value={sortDir}
+            onChange={(e) => setSortDir(e.target.value)}
+            className="min-w-[120px]"
+          >
+            <option value="desc">Desc</option>
+            <option value="asc">Asc</option>
+          </Select>
+          <Button
+            variant="ghost"
+            className="!text-xs"
+            onClick={() => {
+              setSearch("");
+              setSortKey("created_at");
+              setSortDir("desc");
+            }}
+          >
+            Clear
+          </Button>
           <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
             Refresh
           </Button>
         </div>
+        <p className="mb-2 text-xs text-slate-500">
+          Showing {filteredSortedRows.length} of {rows.length}
+        </p>
 
         <div className="mt-2 border-t border-primary-900/25 pt-4">
           <h3 className="mb-3 text-sm font-semibold text-slate-200">
@@ -329,14 +452,26 @@ export function AdminReportsPage() {
           <table className="w-full min-w-[960px] border-collapse text-left text-sm">
             <thead className="bg-slate-900/95 text-xs uppercase text-primary-400/90">
               <tr className="border-b border-primary-900/40">
-                <th className="px-2 py-2">Id</th>
-                <th className="px-2 py-2">Type</th>
-                <th className="px-2 py-2">Summary</th>
-                <th className="px-2 py-2">Source</th>
-                <th className="px-2 py-2">Status</th>
-                <th className="px-2 py-2">Range</th>
-                <th className="px-2 py-2">File</th>
-                <th className="px-2 py-2">When</th>
+                {["Id", "Type", "Summary", "Source", "Status", "Range", "File", "When"].map(
+                  (label) => {
+                    const key = HEADER_SORT_KEYS[label];
+                    return (
+                      <th key={label} className="px-2 py-2">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 hover:text-primary-300"
+                          onClick={() => handleHeaderSort(key)}
+                          title={`Sort by ${label}`}
+                        >
+                          <span>{label}</span>
+                          <span className="w-3 text-center text-[10px]">
+                            {sortIndicator(key)}
+                          </span>
+                        </button>
+                      </th>
+                    );
+                  }
+                )}
                 <th className="px-2 py-2">Actions</th>
               </tr>
             </thead>
@@ -350,8 +485,17 @@ export function AdminReportsPage() {
                     No reports match your filters
                   </td>
                 </tr>
+              ) : filteredSortedRows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="px-3 py-8 text-center text-slate-500"
+                  >
+                    No rows match your search
+                  </td>
+                </tr>
               ) : (
-                rows.map((r) => (
+                filteredSortedRows.map((r) => (
                   <Fragment key={r.id}>
                     <tr className="hover:bg-slate-800/30">
                       <td className="px-2 py-2 font-mono text-xs">{r.id}</td>
