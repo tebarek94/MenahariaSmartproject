@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "@/services/auth.service.js";
 import {
   AuthShell,
   AuthFooterLinks,
 } from "@/components/auth/AuthShell.jsx";
+import { PasswordFieldWithToggle } from "@/components/auth/PasswordFieldWithToggle.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Input } from "@/ui/Input.jsx";
 import { ROUTES } from "@/utils/constants.js";
@@ -13,6 +14,30 @@ import {
   isValidEthiopianPhone,
   normalizeEthiopianPhone,
 } from "@/utils/ethiopianPhone.js";
+import {
+  ADMIN_PASSWORD_MIN_LENGTH,
+  evaluateAdminPassword,
+  getAdminPasswordRequirementError,
+} from "@/utils/passwordPolicy.js";
+import { cn } from "@/utils/cn.js";
+
+function RequirementRow({ met, children }) {
+  return (
+    <li
+      className={cn(
+        "flex items-start gap-2 text-xs",
+        met ? "text-emerald-400/90" : "text-slate-500"
+      )}
+    >
+      <span className="mt-0.5 shrink-0" aria-hidden>
+        {met ? "✓" : "○"}
+      </span>
+      <span>{children}</span>
+    </li>
+  );
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function AdminRegisterPage() {
   const navigate = useNavigate();
@@ -24,28 +49,45 @@ export function AdminRegisterPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const pwdEval = useMemo(() => evaluateAdminPassword(password), [password]);
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
+    const nameTrim = full_name.trim();
+    if (nameTrim.length < 2) {
+      setError("Enter your full name (at least 2 characters).");
+      return;
+    }
     const phoneValue = normalizeEthiopianPhone(phone);
     if (!isValidEthiopianPhone(phoneValue)) {
       setError(ETHIOPIAN_PHONE_ERROR);
+      return;
+    }
+    const emailTrim = email.trim();
+    if (!emailTrim) {
+      setError("Email is required for admin accounts (recovery and security notices).");
+      return;
+    }
+    if (!EMAIL_RE.test(emailTrim)) {
+      setError("Enter a valid email address.");
+      return;
+    }
+    const reqErr = getAdminPasswordRequirementError(password);
+    if (reqErr) {
+      setError(reqErr);
       return;
     }
     if (password !== confirm) {
       setError("Passwords do not match.");
       return;
     }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
-    }
     setLoading(true);
     try {
       await authService.registerAdmin({
-        full_name,
+        full_name: nameTrim,
         phone: phoneValue,
-        email,
+        email: emailTrim,
         password,
       });
       navigate(ROUTES.ADMIN_LOGIN, {
@@ -72,14 +114,14 @@ export function AdminRegisterPage() {
       heroTitle="Create an operations account"
       heroDescription="Book seats. Track status. Travel with confidence. Register to configure the network: users, roles, routes, vehicles, seats, trips, and reports. After approval, sign in from this portal anytime."
       panelTitle="Create account"
-      panelSubtitle="Use a valid Ethiopian phone number; you’ll sign in with it after registration."
+      panelSubtitle="Use a valid Ethiopian phone number; you’ll sign in with it after registration. Use a strong password — required for admin access."
       footer={
         <AuthFooterLinks
           items={[{ to: ROUTES.ADMIN_LOGIN, label: "Sign in instead" }]}
         />
       }
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         <Input
           label="Full name"
           name="full_name"
@@ -87,6 +129,8 @@ export function AdminRegisterPage() {
           value={full_name}
           onChange={(e) => setFullName(e.target.value)}
           required
+          minLength={2}
+          placeholder="Your legal or display name"
         />
         <Input
           label="Phone number"
@@ -105,27 +149,48 @@ export function AdminRegisterPage() {
           autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="Optional"
-        />
-        <Input
-          label="Password"
-          name="password"
-          type="password"
-          autoComplete="new-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          placeholder="you@organization.com"
           required
-          minLength={6}
         />
-        <Input
+        <div className="space-y-2">
+          <PasswordFieldWithToggle
+            id="admin-reg-password"
+            label="Password"
+            name="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={ADMIN_PASSWORD_MIN_LENGTH}
+          />
+          <ul
+            className="rounded-lg border border-white/10 bg-slate-950/40 px-3 py-2.5"
+            aria-label="Password requirements"
+          >
+            <RequirementRow met={pwdEval.checks.length}>
+              At least {ADMIN_PASSWORD_MIN_LENGTH} characters
+            </RequirementRow>
+            <RequirementRow met={pwdEval.checks.upper}>
+              One uppercase letter
+            </RequirementRow>
+            <RequirementRow met={pwdEval.checks.lower}>
+              One lowercase letter
+            </RequirementRow>
+            <RequirementRow met={pwdEval.checks.digit}>One number</RequirementRow>
+            <RequirementRow met={pwdEval.checks.special}>
+              One symbol (not a letter or digit)
+            </RequirementRow>
+          </ul>
+        </div>
+        <PasswordFieldWithToggle
+          id="admin-reg-confirm"
           label="Confirm password"
           name="confirm"
-          type="password"
           autoComplete="new-password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           required
-          minLength={6}
+          minLength={ADMIN_PASSWORD_MIN_LENGTH}
         />
         {error ? (
           <div

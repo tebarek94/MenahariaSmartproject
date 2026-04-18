@@ -8,6 +8,12 @@ import { Input } from "@/ui/Input.jsx";
 import { authService } from "@/services/auth.service.js";
 import { ROUTES } from "@/utils/constants.js";
 import { isPassengerRole } from "@/utils/roles.js";
+import {
+  ETHIOPIAN_PHONE_ERROR,
+  formatEthiopianPhoneForInput,
+  isValidEthiopianPhone,
+  normalizeEthiopianPhone,
+} from "@/utils/ethiopianPhone.js";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -15,13 +21,14 @@ export function LoginPage() {
   const justRegistered = location.state?.registered === true;
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [phoneError, setPhoneError] = useState("");
   const [loginPhase, setLoginPhase] = useState("password");
   const [twoFactorToken, setTwoFactorToken] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [totpLocalError, setTotpLocalError] = useState("");
 
-  const login = useAsync(async () => {
-    const data = await authService.loginAsPassenger(phone, password);
+  const login = useAsync(async (phoneValue, pwd) => {
+    const data = await authService.loginAsPassenger(phoneValue, pwd);
     if (data?.two_factor_required) {
       setTwoFactorToken(data.two_factor_token);
       setLoginPhase("totp");
@@ -45,8 +52,14 @@ export function LoginPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const phoneValue = normalizeEthiopianPhone(phone);
+    if (!isValidEthiopianPhone(phoneValue)) {
+      setPhoneError(ETHIOPIAN_PHONE_ERROR);
+      return;
+    }
+    setPhoneError("");
     try {
-      await login.run();
+      await login.run(phoneValue, password);
     } catch {
       // Error shown in UI
     }
@@ -103,10 +116,21 @@ export function LoginPage() {
             type="tel"
             autoComplete="tel"
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="09xxxxxxxx"
+            onChange={(e) => {
+              setPhone(formatEthiopianPhoneForInput(e.target.value));
+              if (phoneError) setPhoneError("");
+            }}
+            placeholder="0912345678"
             required
           />
+          {phoneError ? (
+            <div
+              className="rounded-lg border border-red-900/50 bg-red-950/35 px-3 py-2.5 text-sm text-red-200"
+              role="alert"
+            >
+              {phoneError}
+            </div>
+          ) : null}
           <PasswordFieldWithToggle
             label="Password"
             name="password"

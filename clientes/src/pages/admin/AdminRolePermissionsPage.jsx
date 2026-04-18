@@ -8,6 +8,7 @@ import { Select } from "@/ui/Select.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { TrashIcon } from "@/ui/icons.jsx";
+import { cn } from "@/utils/cn.js";
 
 export function AdminRolePermissionsPage() {
   const [assignments, setAssignments] = useState([]);
@@ -29,9 +30,9 @@ export function AdminRolePermissionsPage() {
         rolesService.list(),
         permissionsService.list(),
       ]);
-      const listA = Array.isArray(a) ? a : [];
-      const listR = Array.isArray(r) ? r : [];
-      const listP = Array.isArray(p) ? p : [];
+      const listA = Array.isArray(a) ? a : Array.isArray(a?.data) ? a.data : [];
+      const listR = Array.isArray(r) ? r : Array.isArray(r?.data) ? r.data : [];
+      const listP = Array.isArray(p) ? p : Array.isArray(p?.data) ? p.data : [];
       setAssignments(listA);
       setRoles(listR);
       setPermissions(listP);
@@ -102,18 +103,37 @@ export function AdminRolePermissionsPage() {
 
   return (
     <div className="space-y-8">
+      <div className="space-y-1">
+        <h1 className="text-p-heading text-xl font-bold tracking-tight sm:text-2xl">
+          Role permissions
+        </h1>
+        <p className="text-p-muted max-w-xl text-sm sm:text-[0.95rem]">
+          Link roles to permissions. The table below lists every role–permission pair in the
+          database.
+        </p>
+      </div>
+
       {notice ? (
-        <p className="rounded-lg border border-primary-800/50 bg-primary-950/40 px-3 py-2 text-sm text-primary-200">
+        <p
+          className="rounded-lg border border-emerald-200/90 bg-emerald-50/95 px-3 py-2 text-sm text-emerald-900 shadow-sm dark:border-primary-800/50 dark:bg-primary-950/40 dark:text-primary-200 dark:shadow-none"
+          role="status"
+        >
           {notice}
         </p>
       ) : null}
       {error ? (
-        <p className="text-sm text-red-400" role="alert">
+        <p
+          className="rounded-lg border border-red-200 bg-red-50/95 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-300"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
 
-      <Card title="Assign permission to role">
+      <Card
+        title="Assign permission to role"
+        subtitle="Pick a role and a permission, then Assign. Duplicate pairs are rejected by the server."
+      >
         <form
           onSubmit={handleAssign}
           className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
@@ -154,48 +174,56 @@ export function AdminRolePermissionsPage() {
         </form>
       </Card>
 
-      <Card title="Current assignments">
-        <div className="mb-3 flex flex-wrap gap-2">
-          <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
+      <Card
+        title="Current assignments"
+        subtitle="Remove a row to revoke that permission for that role."
+      >
+        <div className="mb-3 flex justify-end">
+          <Button variant="ghost" className="!text-xs" type="button" onClick={() => refresh()}>
             Refresh
           </Button>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-lg border border-primary-200 bg-white shadow-sm dark:border-primary-900/40 dark:bg-slate-950/40 dark:shadow-none">
           <table className="w-full min-w-[640px] border-collapse text-left text-sm">
-            <thead className="text-xs uppercase text-primary-400/90">
-              <tr className="border-b border-primary-900/40">
-                <th className="px-3 py-2 font-semibold">Role</th>
-                <th className="px-3 py-2 font-semibold">Permission</th>
-                <th className="px-3 py-2 font-semibold">Ids</th>
-                <th className="px-3 py-2 font-semibold">Action</th>
+            <thead className="border-b border-primary-200 bg-slate-50/95 text-xs uppercase tracking-wide text-primary-900 shadow-sm backdrop-blur-sm dark:border-primary-900/40 dark:bg-slate-900/95 dark:text-primary-400/95 dark:shadow-none">
+              <tr>
+                <th className="px-3 py-2.5 font-semibold">Role</th>
+                <th className="px-3 py-2.5 font-semibold">Permission</th>
+                <th className="px-3 py-2.5 font-semibold">Ids</th>
+                <th className="px-3 py-2.5 font-semibold text-slate-700 dark:text-primary-400/95">
+                  Action
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/90">
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800/80">
               {assignments.length === 0 ? (
                 <tr>
                   <td
                     colSpan={4}
-                    className="px-3 py-8 text-center text-slate-500"
+                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
                   >
-                    No assignments
+                    No assignments — use the form above to add one.
                   </td>
                 </tr>
               ) : (
                 assignments.map((row, i) => (
                   <tr
                     key={`${row.role_id}-${row.permission_id}-${i}`}
-                    className="bg-slate-950/30 hover:bg-slate-800/30"
+                    className={cn(
+                      "border-b border-slate-100 bg-white transition-colors hover:bg-primary-50/70",
+                      "dark:border-slate-800/60 dark:bg-slate-950/20 dark:hover:bg-slate-800/35"
+                    )}
                   >
-                    <td className="px-3 py-2 text-slate-200">
+                    <td className="px-3 py-2.5 font-medium text-apptext dark:text-slate-100">
                       {row.role_name ?? "—"}
                     </td>
-                    <td className="px-3 py-2 text-slate-200">
+                    <td className="px-3 py-2.5 text-slate-800 dark:text-slate-200">
                       {row.permission_name ?? "—"}
                     </td>
-                    <td className="px-3 py-2 font-mono text-xs text-slate-500">
+                    <td className="px-3 py-2.5 font-mono text-xs tabular-nums text-slate-600 dark:text-slate-400">
                       r{row.role_id} · p{row.permission_id}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2.5">
                       <IconButton
                         variant="danger"
                         label="Remove assignment"

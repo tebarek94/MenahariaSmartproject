@@ -80,7 +80,6 @@ export const ROUTES = {
   ADMIN_TICKETS: "/admin/tickets",
   ADMIN_PAYMENTS: "/admin/payments",
   ADMIN_CARGO: "/admin/cargo",
-  ADMIN_CARGO_RECEIPTS: "/admin/cargo-receipts",
   ADMIN_LOGIN_HISTORY: "/admin/login-history",
   ADMIN_NOTIFICATIONS: "/admin/notifications",
   ADMIN_REFUND_REQUESTS: "/admin/refund-requests",

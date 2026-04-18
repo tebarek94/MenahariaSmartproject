@@ -25,7 +25,8 @@ export function AdminLayout() {
     >
       <AdminSidebar open={sidebarOpen} onClose={closeSidebar} theme={theme} />
 
-      <div className="flex min-h-dvh min-w-0 flex-1 flex-col md:ml-60">
+      {/* Must match AdminSidebar desktop width: md:w-[17rem] */}
+      <div className="flex min-h-dvh min-w-0 flex-1 flex-col md:ml-[17rem]">
         <AdminHeader
           user={auth.user}
           onLogout={auth.logout}

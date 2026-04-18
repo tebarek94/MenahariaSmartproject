@@ -10,6 +10,7 @@ import {
   isDriverRole,
   isPassengerRole,
 } from "@/utils/roles.js";
+import { normalizeEthiopianPhone } from "@/utils/ethiopianPhone.js";
 
 function persistLoginResponse(data) {
   if (data?.token) {
@@ -26,7 +27,11 @@ function persistLoginResponse(data) {
 
 export const authService = {
   async login(phone, password) {
-    const data = await api.post("/api/login", { phone, password });
+    const phoneValue = normalizeEthiopianPhone(phone);
+    const data = await api.post("/api/login", {
+      phone: phoneValue || String(phone ?? "").trim(),
+      password,
+    });
     if (!data?.two_factor_required) {
       persistLoginResponse(data);
     }
@@ -91,9 +96,10 @@ export const authService = {
   },
 
   async registerAdmin({ full_name, phone, email, password }) {
+    const phoneValue = normalizeEthiopianPhone(phone);
     return api.post("/api/register", {
       full_name,
-      phone,
+      phone: phoneValue || String(phone ?? "").trim(),
       email: email?.trim() || null,
       password,
       role_id: ADMIN_ROLE_ID,
@@ -101,12 +107,20 @@ export const authService = {
   },
 
   async register(payload) {
-    return api.post("/api/register", payload);
+    const phoneValue = normalizeEthiopianPhone(payload?.phone);
+    return api.post("/api/register", {
+      ...payload,
+      phone: phoneValue || payload?.phone,
+    });
   },
 
   /** Passenger: step 1 — sends OTP to email (requires DB table + SMTP or dev console). */
   async registerPassengerStart(payload) {
-    return api.post("/api/passenger/register/start", payload);
+    const phoneValue = normalizeEthiopianPhone(payload?.phone);
+    return api.post("/api/passenger/register/start", {
+      ...payload,
+      phone: phoneValue || payload?.phone,
+    });
   },
 
   /** Passenger: step 2 — verify OTP and create account. */

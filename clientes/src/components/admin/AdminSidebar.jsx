@@ -7,19 +7,25 @@ export function AdminSidebar({ open, onClose, theme }) {
   const isLight = theme === "light";
   const linkClass = ({ isActive }) =>
     cn(
-      "flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+      "group relative flex items-center gap-2.5 rounded-lg border border-transparent px-3 py-2.5 text-[0.9375rem] leading-snug transition-[color,background-color,border-color,box-shadow] duration-150",
+      "font-medium tracking-tight",
       isActive
         ? isLight
-          ? "bg-primary-100 text-primary-900 ring-1 ring-primary-300/70"
-          : "bg-primary-800/50 text-primary-50 ring-1 ring-primary-600/40"
+          ? "border-primary-200/80 bg-primary-50 text-primary-950 shadow-sm ring-1 ring-primary-200/60"
+          : "border-primary-700/50 bg-primary-950/40 text-primary-50 shadow-sm ring-1 ring-primary-600/30"
         : isLight
-          ? "text-slate-600 hover:bg-primary-50 hover:text-primary-900"
-          : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-100"
+          ? "text-slate-700 hover:border-primary-100 hover:bg-primary-50/80 hover:text-primary-950"
+          : "text-slate-300 hover:border-slate-700/80 hover:bg-slate-800/90 hover:text-white"
     );
 
   const handleNav = () => {
     onClose?.();
   };
+
+  const sectionTitleClass = cn(
+    "mb-2.5 mt-6 px-3 text-[11px] font-bold uppercase leading-none tracking-[0.14em] first:mt-0",
+    isLight ? "text-slate-500" : "text-slate-500"
+  );
 
   return (
     <>
@@ -34,8 +40,8 @@ export function AdminSidebar({ open, onClose, theme }) {
 
       <aside
         className={cn(
-          "fixed left-0 top-0 z-50 flex h-dvh min-h-0 w-[min(100vw-3rem,17.5rem)] flex-col border-r shadow-xl backdrop-blur-md transition-transform duration-200 ease-out",
-          "md:z-20 md:w-60 md:translate-x-0 md:shadow-none",
+          "fixed left-0 top-0 z-50 flex h-dvh min-h-0 w-[min(100vw-3rem,18rem)] flex-col border-r shadow-xl backdrop-blur-md transition-transform duration-200 ease-out",
+          "md:z-20 md:w-[17rem] md:translate-x-0 md:shadow-none",
           isLight
             ? "border-primary-200 bg-white/95"
             : "border-primary-900/40 bg-slate-900/95",
@@ -44,7 +50,7 @@ export function AdminSidebar({ open, onClose, theme }) {
       >
         <div
           className={cn(
-            "flex h-14 shrink-0 items-center justify-between border-b px-4 md:h-auto md:flex-col md:items-stretch md:gap-3 md:border-0 md:py-5",
+            "flex h-14 shrink-0 items-center justify-between border-b px-4 md:h-auto md:flex-col md:items-stretch md:gap-2 md:border-0 md:px-4 md:pb-2 md:pt-5",
             isLight ? "border-primary-200" : "border-primary-900/40"
           )}
         >
@@ -52,14 +58,29 @@ export function AdminSidebar({ open, onClose, theme }) {
             to={ROUTES.DASHBOARD}
             end
             className={cn(
-              "text-lg font-semibold tracking-tight",
+              "font-sans text-base font-bold tracking-tight md:text-[1.05rem]",
               isLight ? "text-apptext" : "text-white"
             )}
             onClick={handleNav}
           >
             Menahariya{" "}
-            <span className="text-secondary-400">Admin</span>
+            <span
+              className={cn(
+                "font-semibold",
+                isLight ? "text-primary-600" : "text-secondary-400"
+              )}
+            >
+              Admin
+            </span>
           </NavLink>
+          <p
+            className={cn(
+              "hidden text-[12px] font-medium leading-snug md:block",
+              isLight ? "text-slate-500" : "text-slate-500"
+            )}
+          >
+            Control center
+          </p>
           <button
             type="button"
             className={cn(
@@ -75,30 +96,48 @@ export function AdminSidebar({ open, onClose, theme }) {
           </button>
         </div>
 
-        <nav className="flex-1 space-y-4 overflow-y-auto p-3">
-          {ADMIN_NAV_SECTIONS.map((section) => (
-            <div key={section.title}>
-              <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                {section.title}
-              </p>
-              <div className="space-y-1">
-                {section.items.map(({ to, label, end }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    end={end}
-                    className={linkClass}
-                    onClick={handleNav}
-                  >
-                    {label}
-                  </NavLink>
-                ))}
+        <nav
+          className="flex-1 overflow-y-auto px-3 pb-4 pt-1 md:px-3.5"
+          aria-label="Admin navigation"
+        >
+          <div className="space-y-1">
+            {ADMIN_NAV_SECTIONS.map((section) => (
+              <div key={section.title}>
+                <p className={sectionTitleClass}>{section.title}</p>
+                <ul className="space-y-0.5">
+                  {section.items.map(({ to, label, end }) => (
+                    <li key={to}>
+                      <NavLink
+                        to={to}
+                        end={end}
+                        className={linkClass}
+                        onClick={handleNav}
+                      >
+                        <span className="min-w-0 flex-1">{label}</span>
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </nav>
 
-        <div className={cn("border-t p-3", isLight ? "border-primary-200" : "border-primary-900/40")} />
+        <div
+          className={cn(
+            "shrink-0 border-t px-4 py-3",
+            isLight ? "border-primary-200" : "border-primary-900/40"
+          )}
+        >
+          <p
+            className={cn(
+              "text-center text-[11px] font-medium leading-relaxed",
+              isLight ? "text-slate-400" : "text-slate-600"
+            )}
+          >
+            Menahariya Smart
+          </p>
+        </div>
       </aside>
     </>
   );

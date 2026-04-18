@@ -9,6 +9,7 @@ import { Input } from "@/ui/Input.jsx";
 import { ROUTES } from "@/utils/constants.js";
 import {
   ETHIOPIAN_PHONE_ERROR,
+  formatEthiopianPhoneForInput,
   isValidEthiopianPhone,
   normalizeEthiopianPhone,
 } from "@/utils/ethiopianPhone.js";
@@ -124,16 +125,16 @@ export function DriverLoginPage() {
   ]);
 
   const validatePhone = (value) => {
-    const numbersOnly = value.replace(/\D/g, "");
-    setPhone(numbersOnly);
-
-    if (numbersOnly && !numbersOnly.startsWith("09")) {
-      setPhoneError("Phone number must start with 09");
-    } else if (numbersOnly && numbersOnly.length !== 10) {
-      setPhoneError("Phone number must be 10 digits");
-    } else {
+    const uiValue = formatEthiopianPhoneForInput(value);
+    setPhone(uiValue);
+    if (!uiValue) {
       setPhoneError("");
+      return;
     }
+    const normalized = normalizeEthiopianPhone(uiValue);
+    setPhoneError(
+      isValidEthiopianPhone(normalized) ? "" : ETHIOPIAN_PHONE_ERROR
+    );
   };
 
   const checkPasswordStrength = (pwd) => {
@@ -184,15 +185,6 @@ export function DriverLoginPage() {
       setPhoneError("Phone number is required");
       return;
     }
-    if (!phone.startsWith("09")) {
-      setPhoneError("Phone number must start with 09");
-      return;
-    }
-    if (phone.length !== 10) {
-      setPhoneError("Phone number must be 10 digits");
-      return;
-    }
-
     if (password.length < 6) {
       setError("Password must be at least 6 characters long");
       return;
@@ -265,7 +257,7 @@ export function DriverLoginPage() {
               value={phone}
               onChange={(e) => validatePhone(e.target.value)}
               placeholder="0912345678"
-              maxLength={10}
+              maxLength={13}
               className={phoneError ? "border-red-500/50" : ""}
               required
             />

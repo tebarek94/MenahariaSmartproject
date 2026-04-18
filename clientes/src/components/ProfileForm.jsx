@@ -3,6 +3,12 @@ import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Input } from "@/ui/Input.jsx";
 import { DeleteModal } from "@/components/DeleteModal.jsx";
+import {
+  ETHIOPIAN_PHONE_ERROR,
+  formatEthiopianPhoneForInput,
+  isValidEthiopianPhone,
+  normalizeEthiopianPhone,
+} from "@/utils/ethiopianPhone.js";
 
 export function ProfileForm({
   user,
@@ -38,7 +44,7 @@ export function ProfileForm({
     const dataToSubmit = {
       full_name: formData.full_name,
       email: formData.email,
-      phone: formData.phone,
+      phone: normalizeEthiopianPhone(formData.phone),
     };
 
     // Only include password fields if they're filled
@@ -53,6 +59,10 @@ export function ProfileForm({
     // Validate required fields
     if (!dataToSubmit.full_name || !dataToSubmit.phone) {
       setFormError("Full name and phone number are required!");
+      return;
+    }
+    if (!isValidEthiopianPhone(dataToSubmit.phone)) {
+      setFormError(ETHIOPIAN_PHONE_ERROR);
       return;
     }
 
@@ -102,8 +112,13 @@ export function ProfileForm({
                 type="tel"
                 name="phone"
                 value={formData.phone}
-                onChange={handleChange}
-                placeholder="09xxxxxxxx"
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    phone: formatEthiopianPhoneForInput(e.target.value),
+                  })
+                }
+                placeholder="0912345678"
                 required
               />
             </div>

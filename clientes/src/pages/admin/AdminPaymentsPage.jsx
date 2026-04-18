@@ -10,16 +10,18 @@ import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, XIcon } from "@/ui/icons.jsx";
 import { formatDate, formatMoney, localInputToSqlDatetime, toDatetimeLocalValue } from "@/utils/format.js";
+import { cn } from "@/utils/cn.js";
 
 const METHODS = ["cash", "mobile", "bank"];
 const STATUSES = ["pending", "completed", "failed", "refunded"];
-const SORT_OPTIONS = [
-  { value: "id", label: "ID" },
-  { value: "ticket_id", label: "Ticket" },
-  { value: "amount", label: "Amount" },
-  { value: "method", label: "Method" },
-  { value: "status", label: "Status" },
-  { value: "paid_at", label: "Paid at" },
+
+const PAYMENT_SORT_KEYS = [
+  { key: "id", label: "Id" },
+  { key: "ticket_id", label: "Ticket" },
+  { key: "amount", label: "Amount" },
+  { key: "method", label: "Method" },
+  { key: "status", label: "Status" },
+  { key: "paid_at", label: "Paid" },
 ];
 
 function generateTransactionRef() {
@@ -51,6 +53,14 @@ export function AdminPaymentsPage() {
   const [filterMethod, setFilterMethod] = useState("");
   const [sortKey, setSortKey] = useState("paid_at");
   const [sortDir, setSortDir] = useState("desc");
+
+  const [addPaymentOpen, setAddPaymentOpen] = useState(false);
+  const [cTicketId, setCTicketId] = useState("");
+  const [cAmount, setCAmount] = useState("");
+  const [cMethod, setCMethod] = useState("cash");
+  const [cTransactionRef, setCTransactionRef] = useState("");
+  const [cStatus, setCStatus] = useState("pending");
+  const [cPaidAt, setCPaidAt] = useState("");
 
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -115,11 +125,16 @@ export function AdminPaymentsPage() {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case "completed": return "text-green-400";
-      case "pending": return "text-yellow-400";
-      case "failed": return "text-red-400";
-      case "refunded": return "text-blue-400";
-      default: return "text-gray-400";
+      case "completed":
+        return "text-emerald-700 dark:text-emerald-400";
+      case "pending":
+        return "text-amber-700 dark:text-amber-400";
+      case "failed":
+        return "text-red-700 dark:text-red-400";
+      case "refunded":
+        return "text-sky-700 dark:text-sky-400";
+      default:
+        return "text-slate-600 dark:text-slate-400";
     }
   };
 
@@ -182,13 +197,49 @@ export function AdminPaymentsPage() {
     return rows;
   }, [payments, search, filterStatus, filterMethod, sortKey, sortDir, users, tickets]);
 
-  function handleHeaderSort(key) {
+  function handleColumnSort(key) {
+    if (!key) return;
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
       return;
     }
     setSortKey(key);
     setSortDir("asc");
+  }
+
+  async function handleCreate(e) {
+    e.preventDefault();
+    setNotice("");
+    setError("");
+    if (cAmount === "" || Number.isNaN(Number(cAmount))) {
+      setError("Amount is required (number).");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const body = {
+        amount: Number(cAmount),
+        method: cMethod,
+        transaction_ref: cTransactionRef.trim() || generateTransactionRef(),
+        status: cStatus,
+        paid_at: paidAtToBody(cPaidAt),
+      };
+      if (cTicketId) body.ticket_id = Number(cTicketId);
+      await paymentsService.create(body);
+      setNotice("Payment created.");
+      setCTicketId("");
+      setCAmount("");
+      setCMethod("cash");
+      setCTransactionRef("");
+      setCStatus("pending");
+      setCPaidAt("");
+      setAddPaymentOpen(false);
+      await refresh();
+    } catch (err) {
+      setError(err?.data?.message || err?.message || "Create failed");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   const ticketOptions = useMemo(() => {
@@ -273,134 +324,303 @@ export function AdminPaymentsPage() {
 
   return (
     <div className="space-y-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-p-heading text-xl font-bold tracking-tight sm:text-2xl">
+            Payments
+          </h1>
+          <p className="text-p-muted max-w-xl text-sm sm:text-[0.95rem]">
+            Record and review ticket payments. Use{" "}
+            <strong className="font-semibold text-p-heading">Add payment</strong> to open the
+            form. Link a ticket when applicable.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant={addPaymentOpen ? "secondary" : "primary"}
+          className="shrink-0"
+          onClick={() => {
+            setAddPaymentOpen((o) => !o);
+            setError("");
+          }}
+          aria-expanded={addPaymentOpen}
+          aria-controls="admin-add-payment-panel"
+        >
+          {addPaymentOpen ? "Close form" : "Add payment"}
+        </Button>
+      </div>
+
       {notice ? (
-        <p className="rounded-lg border border-primary-800/50 bg-primary-950/40 px-3 py-2 text-sm text-primary-200">
+        <p
+          className="rounded-lg border border-emerald-200/90 bg-emerald-50/95 px-3 py-2 text-sm text-emerald-900 shadow-sm dark:border-primary-800/50 dark:bg-primary-950/40 dark:text-primary-200 dark:shadow-none"
+          role="status"
+        >
           {notice}
         </p>
       ) : null}
       {error ? (
-        <p className="text-sm text-red-400" role="alert">
+        <p
+          className="rounded-lg border border-red-200 bg-red-50/95 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-300"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
 
-      <Card title="Payments">
-        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-          <Input
-            label="Search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="ID, ticket, user, method, status, transaction ref..."
-            className="min-w-[240px] sm:flex-1"
-          />
-          <Select
-            label="Status"
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="min-w-[140px]"
+      {addPaymentOpen ? (
+        <div id="admin-add-payment-panel">
+          <Card
+            title="Create payment"
+            subtitle="Amount and method are required. Ticket is optional. Leave reference empty to auto-generate."
           >
-            <option value="">All statuses</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Method"
-            value={filterMethod}
-            onChange={(e) => setFilterMethod(e.target.value)}
-            className="min-w-[140px]"
-          >
-            <option value="">All methods</option>
-            {METHODS.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Sort by"
-            value={sortKey}
-            onChange={(e) => setSortKey(e.target.value)}
-            className="min-w-[140px]"
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Order"
-            value={sortDir}
-            onChange={(e) => setSortDir(e.target.value)}
-            className="min-w-[120px]"
-          >
-            <option value="desc">Desc</option>
-            <option value="asc">Asc</option>
-          </Select>
-          <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
-            Refresh
-          </Button>
-          <Button
-            variant="ghost"
-            className="!text-xs"
-            onClick={() => {
-              setSearch("");
-              setFilterStatus("");
-              setFilterMethod("");
-              setSortKey("paid_at");
-              setSortDir("desc");
-            }}
-          >
-            Clear
-          </Button>
+            <form
+              onSubmit={handleCreate}
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+            >
+              <Select
+                label="Ticket (optional)"
+                name="payment_ticket"
+                value={cTicketId}
+                onChange={(e) => setCTicketId(e.target.value)}
+              >
+                <option value="">—</option>
+                {ticketOptions.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </Select>
+              <Input
+                label="Amount"
+                type="number"
+                step="0.01"
+                min="0"
+                name="payment_amount"
+                value={cAmount}
+                onChange={(e) => setCAmount(e.target.value)}
+                required
+              />
+              <Select
+                label="Method"
+                name="payment_method"
+                value={cMethod}
+                onChange={(e) => setCMethod(e.target.value)}
+              >
+                {METHODS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </Select>
+              <Input
+                label="Transaction ref (optional)"
+                name="payment_ref"
+                value={cTransactionRef}
+                onChange={(e) => setCTransactionRef(e.target.value)}
+                placeholder="Auto if empty"
+              />
+              <Select
+                label="Status"
+                name="payment_status"
+                value={cStatus}
+                onChange={(e) => setCStatus(e.target.value)}
+              >
+                {STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </Select>
+              <Input
+                label="Paid at (optional)"
+                type="datetime-local"
+                name="payment_paid_at"
+                value={cPaidAt}
+                onChange={(e) => setCPaidAt(e.target.value)}
+              />
+              <div className="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-3">
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? "Creating…" : "Create payment"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setAddPaymentOpen(false);
+                    setError("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </Card>
         </div>
-        <p className="mb-2 text-xs text-slate-500">
-          Showing {filteredSorted.length} of {payments.length}
+      ) : null}
+
+      <Card
+        title="All payments"
+        subtitle="Search and filter. Sort columns by clicking the table headers (▲/▼)."
+      >
+        <div className="mb-4 flex flex-col gap-4 border-b border-primary-200/90 pb-4 dark:border-primary-900/25 lg:flex-row lg:flex-wrap lg:items-end">
+          <div className="max-w-md min-w-[200px] flex-1">
+            <Input
+              label="Search"
+              type="search"
+              name="payments_table_search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Id, ticket, user, method, status, ref…"
+              autoComplete="off"
+              className="w-full"
+            />
+          </div>
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2 sm:max-w-md">
+            <Select
+              label="Status"
+              name="payments_filter_status"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="w-full"
+            >
+              <option value="">All statuses</option>
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </Select>
+            <Select
+              label="Method"
+              name="payments_filter_method"
+              value={filterMethod}
+              onChange={(e) => setFilterMethod(e.target.value)}
+              className="w-full"
+            >
+              <option value="">All methods</option>
+              {METHODS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+        <p className="mb-2 text-xs text-slate-600 dark:text-slate-500">
+          Showing{" "}
+          <span className="font-semibold text-slate-800 dark:text-slate-300">
+            {filteredSorted.length}
+          </span>{" "}
+          of{" "}
+          <span className="font-semibold text-slate-800 dark:text-slate-300">
+            {payments.length}
+          </span>{" "}
+          payments
+          {search.trim() || filterStatus || filterMethod ? " (filtered)" : ""}
         </p>
-        <div className="overflow-x-auto rounded-lg border border-primary-900/30">
+        <div className="overflow-x-auto rounded-lg border border-primary-200 bg-white shadow-sm dark:border-primary-900/40 dark:bg-slate-950/40 dark:shadow-none">
           <table className="w-full min-w-[800px] border-collapse text-left text-sm">
-            <thead className="bg-slate-900/95 text-xs uppercase text-primary-400/90">
-              <tr className="border-b border-primary-900/40">
-                <th className="px-2 py-2"><button type="button" className="hover:text-primary-300" onClick={() => handleHeaderSort("id")}>Id</button></th>
-                <th className="px-2 py-2"><button type="button" className="hover:text-primary-300" onClick={() => handleHeaderSort("ticket_id")}>Ticket</button></th>
-                <th className="px-2 py-2"><button type="button" className="hover:text-primary-300" onClick={() => handleHeaderSort("amount")}>Amount</button></th>
-                <th className="px-2 py-2"><button type="button" className="hover:text-primary-300" onClick={() => handleHeaderSort("method")}>Method</button></th>
-                <th className="px-2 py-2"><button type="button" className="hover:text-primary-300" onClick={() => handleHeaderSort("status")}>Status</button></th>
-                <th className="px-2 py-2"><button type="button" className="hover:text-primary-300" onClick={() => handleHeaderSort("paid_at")}>Paid</button></th>
-                <th className="px-2 py-2">Actions</th>
+            <thead className="sticky top-0 z-[1] border-b border-primary-200 bg-slate-50/95 text-xs uppercase tracking-wide text-primary-900 shadow-sm backdrop-blur-sm dark:border-primary-900/40 dark:bg-slate-900/95 dark:text-primary-400/95 dark:shadow-none">
+              <tr>
+                {PAYMENT_SORT_KEYS.map(({ key, label }) => {
+                  const active = sortKey === key;
+                  return (
+                    <th key={key} scope="col" className="px-2 py-2.5 font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => handleColumnSort(key)}
+                        className={cn(
+                          "flex w-full min-w-0 items-center justify-between gap-1 rounded-md px-1.5 py-1 text-left transition-colors",
+                          "text-slate-700 hover:bg-primary-100/90 hover:text-primary-950",
+                          "dark:text-primary-300/95 dark:hover:bg-white/10 dark:hover:text-primary-50",
+                          active &&
+                            "bg-primary-100/80 font-semibold text-primary-950 dark:bg-white/10 dark:font-semibold dark:text-primary-100"
+                        )}
+                        aria-sort={
+                          active
+                            ? sortDir === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : "none"
+                        }
+                      >
+                        <span className="truncate">{label}</span>
+                        <span
+                          className="shrink-0 tabular-nums text-[0.65rem] text-slate-500 opacity-90 dark:text-primary-400/80"
+                          aria-hidden
+                        >
+                          {active ? (sortDir === "asc" ? "▲" : "▼") : "◇"}
+                        </span>
+                      </button>
+                    </th>
+                  );
+                })}
+                <th
+                  scope="col"
+                  className="px-3 py-2.5 font-semibold text-slate-700 dark:text-primary-400/95"
+                >
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/90">
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800/80">
               {payments.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-slate-500">
-                    No payments
+                  <td
+                    colSpan={7}
+                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
+                  >
+                    No payments — use the Add payment button above to create one.
                   </td>
                 </tr>
               ) : filteredSorted.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-slate-500">
-                    No rows match your filters
+                  <td
+                    colSpan={7}
+                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
+                  >
+                    No payments match your search or filters.{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-primary-700 underline decoration-primary-300 underline-offset-2 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+                      onClick={() => {
+                        setSearch("");
+                        setFilterStatus("");
+                        setFilterMethod("");
+                      }}
+                    >
+                      Clear filters
+                    </button>
                   </td>
                 </tr>
               ) : (
                 filteredSorted.map((p) => (
                   <Fragment key={p.id}>
-                    <tr className="hover:bg-slate-800/30">
-                      <td className="px-2 py-2 font-mono text-xs">{p.id}</td>
-                      <td className="px-2 py-2 text-slate-400">
+                    <tr
+                      className={cn(
+                        "border-b border-slate-100 bg-white transition-colors hover:bg-primary-50/70",
+                        "dark:border-slate-800/60 dark:bg-slate-950/20 dark:hover:bg-slate-800/35"
+                      )}
+                    >
+                      <td className="whitespace-nowrap px-2 py-2.5 font-mono text-xs tabular-nums text-slate-600 dark:text-slate-400">
+                        {p.id}
+                      </td>
+                      <td className="px-2 py-2.5 tabular-nums text-slate-800 dark:text-slate-300">
                         {p.ticket_id ?? "—"}
                       </td>
-                      <td className="px-2 py-2">{formatMoney(p.amount)}</td>
-                      <td className="px-2 py-2">{p.method}</td>
-                      <td className="px-2 py-2">{p.status}</td>
-                      <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">
+                      <td className="px-2 py-2.5 font-medium text-apptext dark:text-slate-100">
+                        {formatMoney(p.amount)}
+                      </td>
+                      <td className="px-2 py-2.5 text-slate-800 dark:text-slate-300">
+                        {p.method}
+                      </td>
+                      <td className="px-2 py-2.5 capitalize text-slate-800 dark:text-slate-300">
+                        {p.status}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-2.5 text-xs text-slate-600 dark:text-slate-400">
                         {formatDate(p.paid_at)}
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2.5">
                         <div className="flex gap-1">
                           <IconButton
                             variant="ghost"
@@ -420,10 +640,10 @@ export function AdminPaymentsPage() {
                       </td>
                     </tr>
                     {editingId === p.id ? (
-                      <tr className="bg-primary-950/20">
+                      <tr className="border-b border-slate-100 bg-primary-50/90 dark:border-slate-800/60 dark:bg-primary-950/25">
                         <td colSpan={7} className="p-4">
                           <form onSubmit={handleUpdate} className="space-y-3">
-                            <p className="text-xs font-medium text-primary-300">
+                            <p className="text-xs font-medium text-slate-700 dark:text-primary-300">
                               Update Payment Status - Payment #{p.id}
                             </p>
                             <div className="grid gap-3 sm:grid-cols-2">
@@ -487,108 +707,146 @@ export function AdminPaymentsPage() {
 
       {/* Payment Details Modal */}
       {showDetails && selectedPayment && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 rounded-lg border border-slate-700 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="payment-details-title"
+        >
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
             <div className="p-6">
-              <div className="flex justify-between items-start mb-6">
+              <div className="mb-6 flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-white mb-2">Payment Details</h2>
-                  <p className="text-slate-400">Transaction ID: #{selectedPayment.id}</p>
+                  <h2
+                    id="payment-details-title"
+                    className="text-xl font-bold text-slate-900 dark:text-white"
+                  >
+                    Payment Details
+                  </h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Transaction ID: #{selectedPayment.id}
+                  </p>
                 </div>
-                <Button variant="ghost" onClick={handleCloseDetails}>
+                <Button variant="ghost" type="button" onClick={handleCloseDetails} aria-label="Close">
                   <XIcon />
                 </Button>
               </div>
 
               <div className="space-y-6">
-                {/* Payment Summary */}
-                <div className="bg-slate-800 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold text-white mb-4">Payment Summary</h3>
+                <div className="rounded-lg border border-slate-200 bg-slate-50/95 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
+                    Payment Summary
+                  </h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <p className="text-sm text-slate-400">Amount</p>
-                      <p className="text-lg font-bold text-green-400">{formatMoney(selectedPayment.amount)}</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">Amount</p>
+                      <p className="text-lg font-bold text-emerald-700 dark:text-emerald-400">
+                        {formatMoney(selectedPayment.amount)}
+                      </p>
                     </div>
                     <div>
-                      <p className="text-sm text-slate-400">Status</p>
-                      <span className={`text-sm font-medium ${getStatusColor(selectedPayment.status)}`}>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">Status</p>
+                      <span
+                        className={`text-sm font-medium ${getStatusColor(selectedPayment.status)}`}
+                      >
                         {selectedPayment.status?.toUpperCase()}
                       </span>
                     </div>
                     <div>
-                      <p className="text-sm text-slate-400">Payment Method</p>
-                      <p className="text-white">{selectedPayment.method?.replace('_', ' ')}</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">Payment Method</p>
+                      <p className="text-slate-900 dark:text-white">
+                        {selectedPayment.method?.replace("_", " ")}
+                      </p>
                     </div>
                     <div>
-                      <p className="text-sm text-slate-400">Transaction Reference</p>
-                      <p className="text-white">{selectedPayment.transaction_ref || 'N/A'}</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">
+                        Transaction Reference
+                      </p>
+                      <p className="text-slate-900 dark:text-white">
+                        {selectedPayment.transaction_ref || "N/A"}
+                      </p>
                     </div>
                   </div>
                 </div>
 
-                {/* User Information */}
-                <div className="bg-slate-800 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold text-white mb-4">User Information</h3>
+                <div className="rounded-lg border border-slate-200 bg-slate-50/95 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
+                    User Information
+                  </h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <p className="text-sm text-slate-400">Customer Name</p>
-                      <p className="text-white">{getUserName(selectedPayment.user_id)}</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">Customer Name</p>
+                      <p className="text-slate-900 dark:text-white">
+                        {getUserName(selectedPayment.user_id)}
+                      </p>
                     </div>
                     <div>
-                      <p className="text-sm text-slate-400">User ID</p>
-                      <p className="text-white">#{selectedPayment.user_id}</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">User ID</p>
+                      <p className="text-slate-900 dark:text-white">#{selectedPayment.user_id}</p>
                     </div>
-                    {selectedPayment.ticket_id && (
+                    {selectedPayment.ticket_id ? (
                       <>
                         <div>
-                          <p className="text-sm text-slate-400">Associated Ticket</p>
-                          <p className="text-white">{getTicketInfo(selectedPayment.ticket_id)}</p>
+                          <p className="text-sm text-slate-600 dark:text-slate-400">
+                            Associated Ticket
+                          </p>
+                          <p className="text-slate-900 dark:text-white">
+                            {getTicketInfo(selectedPayment.ticket_id)}
+                          </p>
                         </div>
                         <div>
-                          <p className="text-sm text-slate-400">Ticket ID</p>
-                          <p className="text-white">#{selectedPayment.ticket_id}</p>
+                          <p className="text-sm text-slate-600 dark:text-slate-400">Ticket ID</p>
+                          <p className="text-slate-900 dark:text-white">
+                            #{selectedPayment.ticket_id}
+                          </p>
                         </div>
                       </>
-                    )}
+                    ) : null}
                   </div>
                 </div>
 
-                {/* Timeline */}
-                <div className="bg-slate-800 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold text-white mb-4">Transaction Timeline</h3>
+                <div className="rounded-lg border border-slate-200 bg-slate-50/95 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
+                    Transaction Timeline
+                  </h3>
                   <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Created</span>
-                      <span className="text-white">{formatDate(selectedPayment.created_at)}</span>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-slate-600 dark:text-slate-400">Created</span>
+                      <span className="text-slate-900 dark:text-white">
+                        {formatDate(selectedPayment.created_at)}
+                      </span>
                     </div>
-                    {selectedPayment.paid_at && (
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Paid At</span>
-                        <span className="text-white">{formatDate(selectedPayment.paid_at)}</span>
+                    {selectedPayment.paid_at ? (
+                      <div className="flex justify-between gap-4">
+                        <span className="text-slate-600 dark:text-slate-400">Paid At</span>
+                        <span className="text-slate-900 dark:text-white">
+                          {formatDate(selectedPayment.paid_at)}
+                        </span>
                       </div>
-                    )}
-                    {selectedPayment.updated_at && (
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Last Updated</span>
-                        <span className="text-white">{formatDate(selectedPayment.updated_at)}</span>
+                    ) : null}
+                    {selectedPayment.updated_at ? (
+                      <div className="flex justify-between gap-4">
+                        <span className="text-slate-600 dark:text-slate-400">Last Updated</span>
+                        <span className="text-slate-900 dark:text-white">
+                          {formatDate(selectedPayment.updated_at)}
+                        </span>
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
 
-                {/* Actions */}
-                <div className="flex gap-3">
-                  {selectedPayment.status === 'pending' && (
-                    <Button variant="primary">
+                <div className="flex flex-wrap gap-3">
+                  {selectedPayment.status === "pending" ? (
+                    <Button variant="primary" type="button" disabled>
                       Mark as Completed
                     </Button>
-                  )}
-                  {selectedPayment.status === 'completed' && (
-                    <Button variant="secondary">
+                  ) : null}
+                  {selectedPayment.status === "completed" ? (
+                    <Button variant="secondary" type="button" disabled>
                       Process Refund
                     </Button>
-                  )}
-                  <Button variant="ghost" onClick={handleCloseDetails}>
+                  ) : null}
+                  <Button variant="ghost" type="button" onClick={handleCloseDetails}>
                     Close
                   </Button>
                 </div>

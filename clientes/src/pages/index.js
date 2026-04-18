@@ -37,7 +37,6 @@ export {
   AdminCargoPage,
   AdminSeatsPage,
   AdminPaymentsPage,
-  AdminCargoReceiptsPage,
   AdminLoginHistoryPage,
   AdminNotificationsPage,
   AdminSupportChatPage,

@@ -43,7 +43,6 @@ import {
   AdminCargoPage,
   AdminSeatsPage,
   AdminPaymentsPage,
-  AdminCargoReceiptsPage,
   AdminLoginHistoryPage,
   AdminNotificationsPage,
   AdminSupportChatPage,
@@ -188,10 +187,6 @@ export default function App() {
             />
             <Route path="/admin/payments" element={<AdminPaymentsPage />} />
             <Route path="/admin/cargo" element={<AdminCargoPage />} />
-            <Route
-              path="/admin/cargo-receipts"
-              element={<AdminCargoReceiptsPage />}
-            />
             <Route
               path="/admin/login-history"
               element={<AdminLoginHistoryPage />}

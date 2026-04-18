@@ -880,48 +880,6 @@
       ]
     },
     {
-      "name": "Cargo receipts",
-      "item": [
-        {
-          "name": "Create cargo receipt",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"cargo_id\": {{cargoId}},\n  \"amount\": 850\n}"
-            },
-            "url": "{{baseUrl}}/api/cargo-receipts",
-            "description": "**Admin only**."
-          }
-        },
-        {
-          "name": "List cargo receipts",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/cargo-receipts" }
-        },
-        {
-          "name": "Get cargo receipt by id",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/cargo-receipts/{{id}}" }
-        },
-        {
-          "name": "Update cargo receipt",
-          "request": {
-            "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"cargo_id\": {{cargoId}},\n  \"amount\": 900\n}"
-            },
-            "url": "{{baseUrl}}/api/cargo-receipts/{{id}}"
-          }
-        },
-        {
-          "name": "Delete cargo receipt",
-          "request": { "method": "DELETE", "url": "{{baseUrl}}/api/cargo-receipts/{{id}}" }
-        }
-      ]
-    },
-    {
       "name": "Notifications",
       "item": [
         {

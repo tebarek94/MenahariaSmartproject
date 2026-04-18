@@ -3,25 +3,18 @@ import { routesService } from "@/services/routes.service.js";
 import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Input } from "@/ui/Input.jsx";
-import { Select } from "@/ui/Select.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
 import { DeleteModal } from "@/components/DeleteModal.jsx";
+import { cn } from "@/utils/cn.js";
 
-const SORT_OPTIONS = [
-  { value: "id", label: "ID" },
-  { value: "origin", label: "Origin" },
-  { value: "destination", label: "Destination" },
-  { value: "distance_km", label: "Distance" },
+const ROUTE_SORT_KEYS = [
+  { key: "id", label: "Id" },
+  { key: "origin", label: "Origin" },
+  { key: "destination", label: "Destination" },
+  { key: "distance_km", label: "Km" },
 ];
-
-const HEADER_SORT_KEYS = {
-  Id: "id",
-  Origin: "origin",
-  Destination: "destination",
-  Km: "distance_km",
-};
 
 function normalizeList(x) {
   return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
@@ -40,6 +33,7 @@ export function AdminRoutesPage() {
   const [sortKey, setSortKey] = useState("id");
   const [sortDir, setSortDir] = useState("asc");
 
+  const [addRouteOpen, setAddRouteOpen] = useState(false);
   const [cOrigin, setCOrigin] = useState("");
   const [cDest, setCDest] = useState("");
   const [cKm, setCKm] = useState("");
@@ -113,7 +107,7 @@ export function AdminRoutesPage() {
     return list;
   }, [rows, search, sortKey, sortDir]);
 
-  function handleHeaderSort(key) {
+  function handleColumnSort(key) {
     if (!key) return;
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -121,11 +115,6 @@ export function AdminRoutesPage() {
     }
     setSortKey(key);
     setSortDir("asc");
-  }
-
-  function sortIndicator(key) {
-    if (sortKey !== key) return "↕";
-    return sortDir === "asc" ? "↑" : "↓";
   }
 
   async function handleCreate(e) {
@@ -146,6 +135,7 @@ export function AdminRoutesPage() {
       setCOrigin("");
       setCDest("");
       setCKm("");
+      setAddRouteOpen(false);
       await refresh();
     } catch (e) {
       setError(e?.data?.message || e?.message || "Create failed");
@@ -233,153 +223,221 @@ export function AdminRoutesPage() {
 
   return (
     <div className="space-y-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-p-heading text-xl font-bold tracking-tight sm:text-2xl">
+            Routes
+          </h1>
+          <p className="text-p-muted max-w-xl text-sm sm:text-[0.95rem]">
+            Define origin–destination pairs and optional distance. Use{" "}
+            <strong className="font-semibold text-p-heading">Add route</strong> to open the form.
+            Trips can reference these routes.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant={addRouteOpen ? "secondary" : "primary"}
+          className="shrink-0"
+          onClick={() => {
+            setAddRouteOpen((o) => !o);
+            setError("");
+          }}
+          aria-expanded={addRouteOpen}
+          aria-controls="admin-add-route-panel"
+        >
+          {addRouteOpen ? "Close form" : "Add route"}
+        </Button>
+      </div>
+
       {notice ? (
-        <p className="rounded-lg border border-primary-800/50 bg-primary-950/40 px-3 py-2 text-sm text-primary-200">
+        <p
+          className="rounded-lg border border-emerald-200/90 bg-emerald-50/95 px-3 py-2 text-sm text-emerald-900 shadow-sm dark:border-primary-800/50 dark:bg-primary-950/40 dark:text-primary-200 dark:shadow-none"
+          role="status"
+        >
           {notice}
         </p>
       ) : null}
       {error ? (
-        <p className="text-sm text-red-400" role="alert">
+        <p
+          className="rounded-lg border border-red-200 bg-red-50/95 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-300"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
 
-      <Card title="Create route">
-        <form
-          onSubmit={handleCreate}
-          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
-        >
-          <Input
-            label="Origin"
-            value={cOrigin}
-            onChange={(e) => setCOrigin(e.target.value)}
-            required
-          />
-          <Input
-            label="Destination"
-            value={cDest}
-            onChange={(e) => setCDest(e.target.value)}
-            required
-          />
-          <Input
-            label="Distance km (optional)"
-            type="number"
-            step="0.01"
-            min="0"
-            value={cKm}
-            onChange={(e) => setCKm(e.target.value)}
-          />
-          <div className="flex items-end">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Creating…" : "Create"}
-            </Button>
-          </div>
-        </form>
-      </Card>
+      {addRouteOpen ? (
+        <div id="admin-add-route-panel">
+          <Card
+            title="Create route"
+            subtitle="Add a new route. Origin and destination are required."
+          >
+            <form
+              onSubmit={handleCreate}
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+            >
+              <Input
+                label="Origin"
+                name="route_origin"
+                value={cOrigin}
+                onChange={(e) => setCOrigin(e.target.value)}
+                required
+              />
+              <Input
+                label="Destination"
+                name="route_destination"
+                value={cDest}
+                onChange={(e) => setCDest(e.target.value)}
+                required
+              />
+              <Input
+                label="Distance km (optional)"
+                type="number"
+                step="0.01"
+                min="0"
+                name="route_distance_km"
+                value={cKm}
+                onChange={(e) => setCKm(e.target.value)}
+              />
+              <div className="flex flex-wrap items-end gap-2">
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? "Creating…" : "Create route"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setAddRouteOpen(false);
+                    setError("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      ) : null}
 
-      <Card title="All routes">
-        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+      <Card
+        title="All routes"
+        subtitle="Filter with search. Sort columns by clicking the table headers (▲/▼)."
+      >
+        <div className="mb-4 max-w-md border-b border-primary-200/90 pb-4 dark:border-primary-900/25">
           <Input
             label="Search"
+            type="search"
+            name="routes_table_search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="ID, origin, destination, distance..."
-            className="min-w-[220px] sm:flex-1"
+            placeholder="Id, origin, destination, distance…"
+            autoComplete="off"
+            className="w-full"
           />
-          <Select
-            label="Sort by"
-            value={sortKey}
-            onChange={(e) => setSortKey(e.target.value)}
-            className="min-w-[140px]"
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Order"
-            value={sortDir}
-            onChange={(e) => setSortDir(e.target.value)}
-            className="min-w-[120px]"
-          >
-            <option value="asc">Asc</option>
-            <option value="desc">Desc</option>
-          </Select>
-          <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
-            Refresh
-          </Button>
-          <Button
-            variant="ghost"
-            className="!text-xs"
-            onClick={() => {
-              setSearch("");
-              setSortKey("id");
-              setSortDir("asc");
-            }}
-          >
-            Clear
-          </Button>
         </div>
-        <p className="mb-2 text-xs text-slate-500">
-          Showing {filteredSorted.length} of {rows.length}
+        <p className="mb-2 text-xs text-slate-600 dark:text-slate-500">
+          Showing{" "}
+          <span className="font-semibold text-slate-800 dark:text-slate-300">
+            {filteredSorted.length}
+          </span>{" "}
+          of{" "}
+          <span className="font-semibold text-slate-800 dark:text-slate-300">{rows.length}</span>{" "}
+          routes
+          {search.trim() ? " (filtered)" : ""}
         </p>
-        <div className="overflow-x-auto rounded-lg border border-primary-900/30">
+        <div className="overflow-x-auto rounded-lg border border-primary-200 bg-white shadow-sm dark:border-primary-900/40 dark:bg-slate-950/40 dark:shadow-none">
           <table className="w-full min-w-[640px] border-collapse text-left text-sm">
-            <thead className="bg-slate-900/95 text-xs uppercase text-primary-400/90">
-              <tr className="border-b border-primary-900/40">
-                {["Id", "Origin", "Destination", "Km"].map((label) => {
-                  const key = HEADER_SORT_KEYS[label];
+            <thead className="border-b border-primary-200 bg-slate-50/95 text-xs uppercase tracking-wide text-primary-900 shadow-sm backdrop-blur-sm dark:border-primary-900/40 dark:bg-slate-900/95 dark:text-primary-400/95 dark:shadow-none">
+              <tr>
+                {ROUTE_SORT_KEYS.map(({ key, label }) => {
+                  const active = sortKey === key;
                   return (
-                    <th key={label} className="px-2 py-2">
+                    <th key={key} scope="col" className="px-2 py-2.5 font-semibold">
                       <button
                         type="button"
-                        className="inline-flex items-center gap-1 hover:text-primary-300"
-                        onClick={() => handleHeaderSort(key)}
-                        title={`Sort by ${label}`}
+                        onClick={() => handleColumnSort(key)}
+                        className={cn(
+                          "flex w-full min-w-0 items-center justify-between gap-1 rounded-md px-1.5 py-1 text-left transition-colors",
+                          "text-slate-700 hover:bg-primary-100/90 hover:text-primary-950",
+                          "dark:text-primary-300/95 dark:hover:bg-white/10 dark:hover:text-primary-50",
+                          active &&
+                            "bg-primary-100/80 font-semibold text-primary-950 dark:bg-white/10 dark:font-semibold dark:text-primary-100"
+                        )}
+                        aria-sort={
+                          active
+                            ? sortDir === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : "none"
+                        }
                       >
-                        <span>{label}</span>
-                        <span className="w-3 text-center text-[10px]">
-                          {sortIndicator(key)}
+                        <span className="truncate">{label}</span>
+                        <span
+                          className="shrink-0 tabular-nums text-[0.65rem] text-slate-500 opacity-90 dark:text-primary-400/80"
+                          aria-hidden
+                        >
+                          {active ? (sortDir === "asc" ? "▲" : "▼") : "◇"}
                         </span>
                       </button>
                     </th>
                   );
                 })}
-                <th className="px-2 py-2">Actions</th>
+                <th
+                  scope="col"
+                  className="px-3 py-2.5 font-semibold text-slate-700 dark:text-primary-400/95"
+                >
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/90">
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800/80">
               {rows.length === 0 ? (
                 <tr>
                   <td
                     colSpan={5}
-                    className="px-3 py-8 text-center text-slate-500"
+                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
                   >
-                    No routes
+                    No routes — use the Add route button above to create one.
                   </td>
                 </tr>
               ) : filteredSorted.length === 0 ? (
                 <tr>
                   <td
                     colSpan={5}
-                    className="px-3 py-8 text-center text-slate-500"
+                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
                   >
-                    No rows match your search
+                    No routes match your search.{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-primary-700 underline decoration-primary-300 underline-offset-2 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+                      onClick={() => setSearch("")}
+                    >
+                      Clear search
+                    </button>
                   </td>
                 </tr>
               ) : (
                 filteredSorted.map((r) => (
                   <Fragment key={r.id}>
-                    <tr className="hover:bg-slate-800/30">
-                      <td className="px-2 py-2 font-mono text-xs">{r.id}</td>
-                      <td className="px-2 py-2">{r.origin}</td>
-                      <td className="px-2 py-2">{r.destination}</td>
-                      <td className="px-2 py-2 text-slate-400">
+                    <tr
+                      className={cn(
+                        "border-b border-slate-100 bg-white transition-colors hover:bg-primary-50/70",
+                        "dark:border-slate-800/60 dark:bg-slate-950/20 dark:hover:bg-slate-800/35"
+                      )}
+                    >
+                      <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs tabular-nums text-slate-600 dark:text-slate-400">
+                        {r.id}
+                      </td>
+                      <td className="px-3 py-2.5 font-medium text-apptext dark:text-slate-100">
+                        {r.origin}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-800 dark:text-slate-200">
+                        {r.destination}
+                      </td>
+                      <td className="px-3 py-2.5 tabular-nums text-slate-600 dark:text-slate-400">
                         {r.distance_km ?? "—"}
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-3 py-2.5">
                         <div className="flex gap-1">
                           <IconButton
                             variant="ghost"
@@ -399,7 +457,7 @@ export function AdminRoutesPage() {
                       </td>
                     </tr>
                     {editingId === r.id ? (
-                      <tr className="bg-primary-950/20">
+                      <tr className="border-b border-slate-100 bg-primary-50/90 dark:border-slate-800/60 dark:bg-primary-950/25">
                         <td colSpan={5} className="p-4">
                           <form onSubmit={handleUpdate} className="space-y-3">
                             <div className="grid gap-3 sm:grid-cols-3">

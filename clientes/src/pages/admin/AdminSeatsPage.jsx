@@ -12,18 +12,13 @@ import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
 import { DeleteModal } from "@/components/DeleteModal.jsx";
+import { cn } from "@/utils/cn.js";
 
-const SORT_OPTIONS = [
-  { value: "id", label: "ID" },
-  { value: "vehicle_id", label: "Vehicle" },
-  { value: "seat_number", label: "Seat #" },
+const SEAT_SORT_KEYS = [
+  { key: "id", label: "Id" },
+  { key: "vehicle_id", label: "Vehicle" },
+  { key: "seat_number", label: "Seat #" },
 ];
-
-const HEADER_SORT_KEYS = {
-  Id: "id",
-  Vehicle: "vehicle_id",
-  "Seat #": "seat_number",
-};
 
 function normalizeList(x) {
   return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
@@ -45,6 +40,7 @@ export function AdminSeatsPage() {
   const [sortKey, setSortKey] = useState("id");
   const [sortDir, setSortDir] = useState("asc");
 
+  const [addSeatOpen, setAddSeatOpen] = useState(false);
   const [cVehicle, setCVehicle] = useState("");
   const [cNum, setCNum] = useState("");
 
@@ -149,7 +145,7 @@ export function AdminSeatsPage() {
     closeEdit();
   }
 
-  function handleHeaderSort(key) {
+  function handleColumnSort(key) {
     if (!key) return;
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -157,11 +153,6 @@ export function AdminSeatsPage() {
     }
     setSortKey(key);
     setSortDir("asc");
-  }
-
-  function sortIndicator(key) {
-    if (sortKey !== key) return "↕";
-    return sortDir === "asc" ? "↑" : "↓";
   }
 
   useEffect(() => {
@@ -207,6 +198,7 @@ export function AdminSeatsPage() {
       setNotice("Seat created.");
       setCVehicle("");
       setCNum("");
+      setAddSeatOpen(false);
       await refresh();
       relationsView.run().catch(() => {});
     } catch (e) {
@@ -292,98 +284,117 @@ export function AdminSeatsPage() {
 
   return (
     <div className="space-y-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-p-heading text-xl font-bold tracking-tight sm:text-2xl">
+            Seats
+          </h1>
+          <p className="text-p-muted max-w-xl text-sm sm:text-[0.95rem]">
+            Seats belong to a vehicle. Use{" "}
+            <strong className="font-semibold text-p-heading">Add seat</strong> to open the form,
+            then pick a vehicle card to browse and edit the list.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant={addSeatOpen ? "secondary" : "primary"}
+          className="shrink-0"
+          onClick={() => {
+            setAddSeatOpen((o) => !o);
+            setError("");
+          }}
+          aria-expanded={addSeatOpen}
+          aria-controls="admin-add-seat-panel"
+        >
+          {addSeatOpen ? "Close form" : "Add seat"}
+        </Button>
+      </div>
+
       {notice ? (
-        <p className="rounded-lg border border-primary-800/50 bg-primary-950/40 px-3 py-2 text-sm text-primary-200">
+        <p
+          className="rounded-lg border border-emerald-200/90 bg-emerald-50/95 px-3 py-2 text-sm text-emerald-900 shadow-sm dark:border-primary-800/50 dark:bg-primary-950/40 dark:text-primary-200 dark:shadow-none"
+          role="status"
+        >
           {notice}
         </p>
       ) : null}
       {error ? (
-        <p className="text-sm text-red-400" role="alert">
+        <p
+          className="rounded-lg border border-red-200 bg-red-50/95 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-300"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
 
-      <Card title="Create seat">
-        <form
-          onSubmit={handleCreate}
-          className="grid gap-4 sm:grid-cols-3"
-        >
-          <Select
-            label="Vehicle"
-            value={cVehicle}
-            onChange={(e) => setCVehicle(e.target.value)}
-            required
+      {addSeatOpen ? (
+        <div id="admin-add-seat-panel">
+          <Card
+            title="Create seat"
+            subtitle="Choose a vehicle and a seat number. Numbers must be unique per vehicle."
           >
-            <option value="">Select…</option>
-            {vehicles.map((v) => (
-              <option key={v.id} value={v.id}>
-                #{v.id} {v.plate_number || v.model || "vehicle"}
-              </option>
-            ))}
-          </Select>
-          <Input
-            label="Seat number"
-            type="number"
-            min="1"
-            value={cNum}
-            onChange={(e) => setCNum(e.target.value)}
-            required
-          />
-          <div className="flex items-end">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Creating…" : "Create"}
-            </Button>
-          </div>
-        </form>
-      </Card>
+            <form onSubmit={handleCreate} className="grid gap-4 sm:grid-cols-3">
+              <Select
+                label="Vehicle"
+                name="seat_vehicle"
+                value={cVehicle}
+                onChange={(e) => setCVehicle(e.target.value)}
+                required
+              >
+                <option value="">Select…</option>
+                {vehicles.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    #{v.id} {v.plate_number || v.model || "vehicle"}
+                  </option>
+                ))}
+              </Select>
+              <Input
+                label="Seat number"
+                type="number"
+                min="1"
+                name="seat_number"
+                value={cNum}
+                onChange={(e) => setCNum(e.target.value)}
+                required
+              />
+              <div className="flex flex-wrap items-end gap-2">
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? "Creating…" : "Create seat"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setAddSeatOpen(false);
+                    setError("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      ) : null}
 
       <Card
         title="All seats"
-        subtitle="Click a vehicle card (or “All vehicles”) to open the detailed table. Click again to hide."
+        subtitle="Click a vehicle card (or “All vehicles”) to open the detailed table. Sort columns by clicking the headers (▲/▼). Click again to hide."
       >
-        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-          <Input
-            label="Search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="ID, vehicle, seat number..."
-            className="min-w-[220px] sm:flex-1"
-          />
-          <Select
-            label="Sort by"
-            value={sortKey}
-            onChange={(e) => setSortKey(e.target.value)}
-            className="min-w-[130px]"
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Order"
-            value={sortDir}
-            onChange={(e) => setSortDir(e.target.value)}
-            className="min-w-[120px]"
-          >
-            <option value="asc">Asc</option>
-            <option value="desc">Desc</option>
-          </Select>
-          <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
-            Refresh
-          </Button>
-          <Button
-            variant="ghost"
-            className="!text-xs"
-            onClick={() => {
-              setSearch("");
-              setSortKey("id");
-              setSortDir("asc");
-            }}
-          >
-            Clear
-          </Button>
+        <div className="mb-4 flex flex-col gap-3 border-b border-primary-200/90 pb-4 dark:border-primary-900/25 sm:flex-row sm:flex-wrap sm:items-end">
+          <div className="max-w-md min-w-[200px] flex-1">
+            <Input
+              label="Search"
+              type="search"
+              name="seats_table_search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Id, vehicle, seat number…"
+              autoComplete="off"
+              className="w-full"
+              disabled={tableSelection == null}
+            />
+          </div>
           {tableSelection != null ? (
             <Button
               variant="ghost"
@@ -400,14 +411,15 @@ export function AdminSeatsPage() {
         </div>
 
         {tableSelection == null ? (
-          <p className="mb-3 text-sm text-slate-500">
+          <p className="mb-3 text-sm text-slate-600 dark:text-slate-500">
             Choose a card to load the seat list in the table below.
           </p>
         ) : (
-          <p className="mb-3 text-sm text-primary-200/90">
+          <p className="mb-3 text-sm text-slate-700 dark:text-slate-300">
             {tableSelection === "all"
               ? `Showing ${filteredSortedRows.length} of ${tableRows.length} seat(s).`
               : `Showing ${filteredSortedRows.length} of ${tableRows.length} seat(s) for vehicle #${tableSelection}.`}
+            {search.trim() ? " (filtered)" : ""}
           </p>
         )}
 
@@ -415,18 +427,21 @@ export function AdminSeatsPage() {
           <button
             type="button"
             onClick={() => toggleTableSelection("all")}
-            className={`rounded-xl border p-4 text-left transition ${
+            className={cn(
+              "rounded-xl border p-4 text-left transition",
               tableSelection === "all"
-                ? "border-primary-500 bg-primary-950/40 ring-2 ring-primary-500/60"
-                : "border-primary-900/40 bg-slate-950/50 hover:border-primary-700/50 hover:bg-slate-900/50"
-            }`}
+                ? "border-primary-500 bg-primary-50 ring-2 ring-primary-500/40 dark:bg-primary-950/40 dark:ring-primary-500/60"
+                : "border-slate-200 bg-white hover:border-primary-300 hover:bg-primary-50/50 dark:border-primary-900/40 dark:bg-slate-950/50 dark:hover:border-primary-700/50 dark:hover:bg-slate-900/50"
+            )}
           >
-            <p className="text-xs font-medium uppercase tracking-wide text-primary-400/90">
+            <p className="text-xs font-medium uppercase tracking-wide text-primary-800 dark:text-primary-400/90">
               All vehicles
             </p>
-            <p className="mt-1 text-lg font-semibold text-slate-100">
+            <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
               {seats.length}{" "}
-              <span className="text-sm font-normal text-slate-400">seats</span>
+              <span className="text-sm font-normal text-slate-600 dark:text-slate-400">
+                seats
+              </span>
             </p>
           </button>
           {vehicleTableCards.map(({ id, label, count }) => (
@@ -434,59 +449,82 @@ export function AdminSeatsPage() {
               key={id}
               type="button"
               onClick={() => toggleTableSelection(id)}
-              className={`rounded-xl border p-4 text-left transition ${
+              className={cn(
+                "rounded-xl border p-4 text-left transition",
                 tableSelection === id
-                  ? "border-primary-500 bg-primary-950/40 ring-2 ring-primary-500/60"
-                  : "border-primary-900/40 bg-slate-950/50 hover:border-primary-700/50 hover:bg-slate-900/50"
-              }`}
+                  ? "border-primary-500 bg-primary-50 ring-2 ring-primary-500/40 dark:bg-primary-950/40 dark:ring-primary-500/60"
+                  : "border-slate-200 bg-white hover:border-primary-300 hover:bg-primary-50/50 dark:border-primary-900/40 dark:bg-slate-950/50 dark:hover:border-primary-700/50 dark:hover:bg-slate-900/50"
+              )}
             >
-              <p className="text-xs font-medium uppercase tracking-wide text-primary-400/90">
+              <p className="text-xs font-medium uppercase tracking-wide text-primary-800 dark:text-primary-400/90">
                 Vehicle #{id}
               </p>
-              <p className="mt-0.5 truncate text-sm text-slate-200" title={label}>
+              <p className="mt-0.5 truncate text-sm text-slate-800 dark:text-slate-200" title={label}>
                 {label}
               </p>
-              <p className="mt-1 text-lg font-semibold text-slate-100">
+              <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
                 {count}{" "}
-                <span className="text-sm font-normal text-slate-400">seats</span>
+                <span className="text-sm font-normal text-slate-600 dark:text-slate-400">
+                  seats
+                </span>
               </p>
             </button>
           ))}
         </div>
 
         {tableSelection != null ? (
-          <div className="overflow-x-auto rounded-lg border border-primary-900/30">
+          <div className="overflow-x-auto rounded-lg border border-primary-200 bg-white shadow-sm dark:border-primary-900/40 dark:bg-slate-950/40 dark:shadow-none">
             <div className="max-h-[min(50vh,22rem)] overflow-y-auto overscroll-contain">
               <table className="w-full min-w-[480px] border-collapse text-left text-sm">
-                <thead className="sticky top-0 z-10 bg-slate-900/95 text-xs uppercase text-primary-400/90 shadow-[0_1px_0_0_rgba(15,23,42,0.9)] backdrop-blur-sm">
-                  <tr className="border-b border-primary-900/40">
-                    {["Id", "Vehicle", "Seat #"].map((label) => {
-                      const key = HEADER_SORT_KEYS[label];
+                <thead className="sticky top-0 z-10 border-b border-primary-200 bg-slate-50/95 text-xs uppercase tracking-wide text-primary-900 shadow-sm backdrop-blur-sm dark:border-primary-900/40 dark:bg-slate-900/95 dark:text-primary-400/95 dark:shadow-none">
+                  <tr>
+                    {SEAT_SORT_KEYS.map(({ key, label }) => {
+                      const active = sortKey === key;
                       return (
-                        <th key={label} className="px-2 py-1.5">
+                        <th key={key} scope="col" className="px-2 py-2 font-semibold">
                           <button
                             type="button"
-                            className="inline-flex items-center gap-1 hover:text-primary-300"
-                            onClick={() => handleHeaderSort(key)}
-                            title={`Sort by ${label}`}
+                            onClick={() => handleColumnSort(key)}
+                            className={cn(
+                              "flex w-full min-w-0 items-center justify-between gap-1 rounded-md px-1.5 py-1 text-left transition-colors",
+                              "text-slate-700 hover:bg-primary-100/90 hover:text-primary-950",
+                              "dark:text-primary-300/95 dark:hover:bg-white/10 dark:hover:text-primary-50",
+                              active &&
+                                "bg-primary-100/80 font-semibold text-primary-950 dark:bg-white/10 dark:font-semibold dark:text-primary-100"
+                            )}
+                            aria-sort={
+                              active
+                                ? sortDir === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : "none"
+                            }
                           >
-                            <span>{label}</span>
-                            <span className="w-3 text-center text-[10px]">
-                              {sortIndicator(key)}
+                            <span className="truncate">{label}</span>
+                            <span
+                              className="shrink-0 tabular-nums text-[0.65rem] text-slate-500 opacity-90 dark:text-primary-400/80"
+                              aria-hidden
+                            >
+                              {active ? (sortDir === "asc" ? "▲" : "▼") : "◇"}
                             </span>
                           </button>
                         </th>
                       );
                     })}
-                    <th className="px-2 py-1.5">Actions</th>
+                    <th
+                      scope="col"
+                      className="px-2 py-2 font-semibold text-slate-700 dark:text-primary-400/95"
+                    >
+                      Actions
+                    </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/90">
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800/80">
                   {tableRows.length === 0 ? (
                     <tr>
                       <td
                         colSpan={4}
-                        className="px-3 py-8 text-center text-slate-500"
+                        className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
                       >
                         No seats in this view
                       </td>
@@ -495,9 +533,16 @@ export function AdminSeatsPage() {
                     <tr>
                       <td
                         colSpan={4}
-                        className="px-3 py-8 text-center text-slate-500"
+                        className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
                       >
-                        No rows match your search
+                        No rows match your search.{" "}
+                        <button
+                          type="button"
+                          className="font-medium text-primary-700 underline decoration-primary-300 underline-offset-2 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+                          onClick={() => setSearch("")}
+                        >
+                          Clear search
+                        </button>
                       </td>
                     </tr>
                   ) : (
@@ -505,14 +550,21 @@ export function AdminSeatsPage() {
                       <Fragment key={s.id}>
                         <tr
                           id={`seat-row-${s.id}`}
-                          className="hover:bg-slate-800/30"
+                          className={cn(
+                            "border-b border-slate-100 bg-white transition-colors hover:bg-primary-50/70",
+                            "dark:border-slate-800/60 dark:bg-slate-950/20 dark:hover:bg-slate-800/35"
+                          )}
                         >
-                          <td className="px-2 py-1.5 font-mono text-xs">
+                          <td className="px-2 py-2 font-mono text-xs tabular-nums text-slate-600 dark:text-slate-400">
                             {s.id}
                           </td>
-                          <td className="px-2 py-1.5">{s.vehicle_id}</td>
-                          <td className="px-2 py-1.5">{s.seat_number}</td>
-                          <td className="px-2 py-1.5">
+                          <td className="px-2 py-2 tabular-nums text-slate-800 dark:text-slate-200">
+                            {s.vehicle_id}
+                          </td>
+                          <td className="px-2 py-2 tabular-nums font-medium text-apptext dark:text-slate-100">
+                            {s.seat_number}
+                          </td>
+                          <td className="px-2 py-2">
                             <div className="flex gap-1">
                               <IconButton
                                 variant="ghost"
@@ -532,7 +584,7 @@ export function AdminSeatsPage() {
                           </td>
                         </tr>
                         {editingId === s.id ? (
-                          <tr className="bg-primary-950/20">
+                          <tr className="border-b border-slate-100 bg-primary-50/90 dark:border-slate-800/60 dark:bg-primary-950/25">
                             <td colSpan={4} className="p-3 sm:p-4">
                               <form
                                 onSubmit={handleUpdate}
@@ -604,17 +656,22 @@ export function AdminSeatsPage() {
 
       <Card
         title="Joined view (read-only)"
-        subtitle="GET /api/views/seats-relations"
+        subtitle="GET /api/views/seats-relations — read-only join preview from the database."
       >
         {relationsView.loading && !relationsView.data ? (
           <div className="flex justify-center py-12">
             <Spinner />
           </div>
         ) : relationsView.error ? (
-          <p className="text-sm text-red-400">{relationsView.error.message}</p>
+          <p
+            className="rounded-lg border border-red-200 bg-red-50/95 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-300"
+            role="alert"
+          >
+            {relationsView.error.message}
+          </p>
         ) : (
           <>
-            <p className="mb-3 text-xs text-slate-500">
+            <p className="mb-3 text-xs text-slate-600 dark:text-slate-500">
               limit {relationsView.data?.limit ?? "—"}
             </p>
             <DataTable

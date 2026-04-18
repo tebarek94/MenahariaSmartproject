@@ -1,5 +1,6 @@
 import { API_BASE, STORAGE_KEYS } from "@/utils/constants.js";
 import { clearClientSession } from "@/services/authSession.js";
+import { normalizeEthiopianPhone } from "@/utils/ethiopianPhone.js";
 
 /** API may return `message` as a string or validation object; never pass objects to React. */
 function messageFromResponseBody(data) {
@@ -29,6 +30,27 @@ function isPublicAuthRequest(path) {
   );
 }
 
+const PHONE_KEYS = new Set(["phone", "phone_number", "customer_phone"]);
+
+function normalizePhoneFields(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizePhoneFields(item));
+  }
+  if (!value || typeof value !== "object") return value;
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (PHONE_KEYS.has(k) && typeof v === "string") {
+      const normalized = normalizeEthiopianPhone(v);
+      out[k] = normalized || v.trim();
+    } else if (v && typeof v === "object") {
+      out[k] = normalizePhoneFields(v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 /**
  * Low-level HTTP client aligned with Express API (Bearer JWT).
  */
@@ -46,7 +68,7 @@ async function request(path, { method = "GET", body, headers = {} } = {}) {
   };
 
   if (body != null && method !== "GET" && method !== "HEAD") {
-    init.body = JSON.stringify(body);
+    init.body = JSON.stringify(normalizePhoneFields(body));
   }
 
   const res = await fetch(url, init);

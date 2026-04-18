@@ -25,7 +25,7 @@ export function AdminPermissionsPage() {
     setError("");
     try {
       const rows = await permissionsService.list();
-      const list = Array.isArray(rows) ? rows : [];
+      const list = Array.isArray(rows) ? rows : Array.isArray(rows?.data) ? rows.data : [];
       setPermissions(list);
       const next = {};
       list.forEach((x) => {
@@ -124,13 +124,28 @@ export function AdminPermissionsPage() {
 
   return (
     <div className="space-y-8">
+      <div className="space-y-1">
+        <h1 className="text-p-heading text-xl font-bold tracking-tight sm:text-2xl">
+          Permissions
+        </h1>
+        <p className="text-p-muted max-w-xl text-sm sm:text-[0.95rem]">
+          Define permission names for RBAC, then attach them to roles on Role permissions.
+        </p>
+      </div>
+
       {notice ? (
-        <p className="rounded-lg border border-primary-800/50 bg-primary-950/40 px-3 py-2 text-sm text-primary-200">
+        <p
+          className="rounded-lg border border-emerald-200/90 bg-emerald-50/95 px-3 py-2 text-sm text-emerald-900 shadow-sm dark:border-primary-800/50 dark:bg-primary-950/40 dark:text-primary-200 dark:shadow-none"
+          role="status"
+        >
           {notice}
         </p>
       ) : null}
       {error ? (
-        <p className="text-sm text-red-400" role="alert">
+        <p
+          className="rounded-lg border border-red-200 bg-red-50/95 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-300"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
@@ -152,22 +167,27 @@ export function AdminPermissionsPage() {
         </form>
       </Card>
 
-      <Card title="Permissions">
-        <div className="mb-3">
-          <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
+      <Card
+        title="All permissions"
+        subtitle="Edit names inline, then save. Deleting may fail if a role still references the permission."
+      >
+        <div className="mb-3 flex justify-end">
+          <Button variant="ghost" className="!text-xs" type="button" onClick={() => refresh()}>
             Refresh
           </Button>
         </div>
         <div className="space-y-3">
           {permissions.length === 0 ? (
-            <p className="text-sm text-slate-500">No permissions</p>
+            <p className="rounded-lg border border-dashed border-primary-200 bg-slate-50/80 px-4 py-8 text-center text-sm text-slate-600 dark:border-primary-900/40 dark:bg-slate-950/30 dark:text-slate-400">
+              No permissions yet — create one above.
+            </p>
           ) : (
             permissions.map((p) => (
               <div
                 key={p.id}
-                className="flex flex-col gap-2 rounded-lg border border-slate-800/80 bg-slate-900/40 p-3 sm:flex-row sm:items-center sm:gap-3"
+                className="flex flex-col gap-2 rounded-lg border border-primary-200/90 bg-white p-3 shadow-sm transition-colors hover:bg-primary-50/40 dark:border-slate-700/90 dark:bg-slate-950/35 dark:shadow-none dark:hover:bg-slate-900/45 sm:flex-row sm:items-center sm:gap-3"
               >
-                <span className="w-12 shrink-0 font-mono text-xs text-slate-500">
+                <span className="w-12 shrink-0 font-mono text-xs tabular-nums text-slate-500 dark:text-slate-500">
                   #{p.id}
                 </span>
                 <Input

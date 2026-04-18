@@ -23,7 +23,7 @@ export function AdminRolesPage() {
     setError("");
     try {
       const r = await rolesService.list();
-      const list = Array.isArray(r) ? r : [];
+      const list = Array.isArray(r) ? r : Array.isArray(r?.data) ? r.data : [];
       setRoles(list);
       const next = {};
       list.forEach((x) => {
@@ -123,21 +123,37 @@ export function AdminRolesPage() {
 
   return (
     <div className="space-y-8">
+      <div className="space-y-1">
+        <h1 className="text-p-heading text-xl font-bold tracking-tight sm:text-2xl">
+          Roles
+        </h1>
+        <p className="text-p-muted max-w-xl text-sm sm:text-[0.95rem]">
+          Create and manage role names used for permissions and user assignment.
+        </p>
+      </div>
+
       {notice ? (
-        <div className="rounded-lg border border-green-500/30 bg-green-900/20 px-4 py-3 text-sm text-green-400">
+        <p
+          className="rounded-lg border border-emerald-200/90 bg-emerald-50/95 px-3 py-2 text-sm text-emerald-900 shadow-sm dark:border-primary-800/50 dark:bg-primary-950/40 dark:text-primary-200 dark:shadow-none"
+          role="status"
+        >
           {notice}
-        </div>
+        </p>
       ) : null}
       {error ? (
-        <div className="rounded-lg border border-red-500/30 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <p className="font-medium text-red-300">Error</p>
-              <p className="mt-1">{error}</p>
+        <div
+          className="rounded-lg border border-red-200 bg-red-50/95 px-4 py-3 text-sm text-red-800 shadow-sm dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-200 dark:shadow-none"
+          role="alert"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-red-900 dark:text-red-300">Error</p>
+              <p className="mt-1 text-red-800 dark:text-red-200/95">{error}</p>
             </div>
             <button
+              type="button"
               onClick={() => setError("")}
-              className="ml-3 text-red-400 hover:text-red-300"
+              className="shrink-0 rounded p-1 text-red-600 transition-colors hover:bg-red-100 hover:text-red-900 dark:text-red-400 dark:hover:bg-red-950/60 dark:hover:text-red-100"
               aria-label="Dismiss error"
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -165,22 +181,24 @@ export function AdminRolesPage() {
         </form>
       </Card>
 
-      <Card title="Roles">
-        <div className="mb-3">
-          <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
+      <Card title="All roles" subtitle="Edit names inline, then save. Deleting a role may fail if users still reference it.">
+        <div className="mb-3 flex justify-end">
+          <Button variant="ghost" className="!text-xs" type="button" onClick={() => refresh()}>
             Refresh
           </Button>
         </div>
         <div className="space-y-3">
           {roles.length === 0 ? (
-            <p className="text-sm text-slate-500">No roles</p>
+            <p className="rounded-lg border border-dashed border-primary-200 bg-slate-50/80 px-4 py-8 text-center text-sm text-slate-600 dark:border-primary-900/40 dark:bg-slate-950/30 dark:text-slate-400">
+              No roles yet — create one above.
+            </p>
           ) : (
             roles.map((r) => (
               <div
                 key={r.id}
-                className="flex flex-col gap-2 rounded-lg border border-slate-800/80 bg-slate-900/40 p-3 sm:flex-row sm:items-center sm:gap-3"
+                className="flex flex-col gap-2 rounded-lg border border-primary-200/90 bg-white p-3 shadow-sm transition-colors hover:bg-primary-50/40 dark:border-slate-700/90 dark:bg-slate-950/35 dark:shadow-none dark:hover:bg-slate-900/45 sm:flex-row sm:items-center sm:gap-3"
               >
-                <span className="w-12 shrink-0 font-mono text-xs text-slate-500">
+                <span className="w-12 shrink-0 font-mono text-xs tabular-nums text-slate-500 dark:text-slate-500">
                   #{r.id}
                 </span>
                 <Input

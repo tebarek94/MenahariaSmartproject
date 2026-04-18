@@ -12,29 +12,20 @@ import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
 import { DeleteModal } from "@/components/DeleteModal.jsx";
 import { formatDate, localInputToSqlDatetime, toDatetimeLocalValue } from "@/utils/format.js";
+import { cn } from "@/utils/cn.js";
 
 const TRIP_STATUSES = ["scheduled", "ongoing", "completed", "cancelled"];
-const SORT_OPTIONS = [
-  { value: "id", label: "ID" },
-  { value: "route", label: "Route" },
-  { value: "vehicle", label: "Vehicle" },
-  { value: "driver", label: "Driver" },
-  { value: "departure_time", label: "Departure" },
-  { value: "arrival_time", label: "Arrival" },
-  { value: "price", label: "Price" },
-  { value: "status", label: "Status" },
-];
 
-const HEADER_SORT_KEYS = {
-  Id: "id",
-  Route: "route",
-  Vehicle: "vehicle",
-  Driver: "driver",
-  Departure: "departure_time",
-  Arrival: "arrival_time",
-  Price: "price",
-  Status: "status",
-};
+const TRIP_SORT_KEYS = [
+  { key: "id", label: "Id" },
+  { key: "route", label: "Route" },
+  { key: "vehicle", label: "Vehicle" },
+  { key: "driver", label: "Driver" },
+  { key: "departure_time", label: "Departure" },
+  { key: "arrival_time", label: "Arrival" },
+  { key: "price", label: "Price" },
+  { key: "status", label: "Status" },
+];
 
 function normalizeList(x) {
   return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
@@ -72,6 +63,7 @@ export function AdminTripsPage() {
   const [sortKey, setSortKey] = useState("departure_time");
   const [sortDir, setSortDir] = useState("desc");
 
+  const [addTripOpen, setAddTripOpen] = useState(false);
   const [cRoute, setCRoute] = useState("");
   const [cVehicle, setCVehicle] = useState("");
   const [cDriver, setCDriver] = useState("");
@@ -241,7 +233,7 @@ export function AdminTripsPage() {
     return rows;
   }, [trips, search, filterStatus, sortKey, sortDir, routeById, vehicleById, userById]);
 
-  function handleHeaderSort(key) {
+  function handleColumnSort(key) {
     if (!key) return;
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -249,11 +241,6 @@ export function AdminTripsPage() {
     }
     setSortKey(key);
     setSortDir("asc");
-  }
-
-  function sortIndicator(key) {
-    if (sortKey !== key) return "↕";
-    return sortDir === "asc" ? "↑" : "↓";
   }
 
   function openEdit(x) {
@@ -319,6 +306,7 @@ export function AdminTripsPage() {
       setCArrive("");
       setCPrice("");
       setCStatus("scheduled");
+      setAddTripOpen(false);
       await refresh();
     } catch (e) {
       setError(e?.data?.message || e?.message || "Create failed");
@@ -423,233 +411,317 @@ export function AdminTripsPage() {
 
   return (
     <div className="space-y-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-p-heading text-xl font-bold tracking-tight sm:text-2xl">
+            Trips
+          </h1>
+          <p className="text-p-muted max-w-xl text-sm sm:text-[0.95rem]">
+            Schedule runs on routes with vehicles and optional drivers. Use{" "}
+            <strong className="font-semibold text-p-heading">Add trip</strong> to open the form.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant={addTripOpen ? "secondary" : "primary"}
+          className="shrink-0"
+          onClick={() => {
+            setAddTripOpen((o) => !o);
+            setError("");
+          }}
+          aria-expanded={addTripOpen}
+          aria-controls="admin-add-trip-panel"
+        >
+          {addTripOpen ? "Close form" : "Add trip"}
+        </Button>
+      </div>
+
       {notice ? (
-        <p className="rounded-lg border border-primary-800/50 bg-primary-950/40 px-3 py-2 text-sm text-primary-200">
+        <p
+          className="rounded-lg border border-emerald-200/90 bg-emerald-50/95 px-3 py-2 text-sm text-emerald-900 shadow-sm dark:border-primary-800/50 dark:bg-primary-950/40 dark:text-primary-200 dark:shadow-none"
+          role="status"
+        >
           {notice}
         </p>
       ) : null}
       {error ? (
-        <p className="text-sm text-red-400" role="alert">
+        <p
+          className="rounded-lg border border-red-200 bg-red-50/95 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-300"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
 
-      <Card title="Create trip">
-        <form
-          onSubmit={handleCreate}
-          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-        >
-          <Select
-            label="Route"
-            value={cRoute}
-            onChange={(e) => setCRoute(e.target.value)}
-            required
+      {addTripOpen ? (
+        <div id="admin-add-trip-panel">
+          <Card
+            title="Create trip"
+            subtitle="Route, vehicle, departure, and price are required. Driver and arrival are optional."
           >
-            <option value="">Select route…</option>
-            {routes.map((r) => (
-              <option key={r.id} value={r.id} title={`Route ID ${r.id}`}>
-                {r.origin} → {r.destination}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Vehicle"
-            value={cVehicle}
-            onChange={(e) => setCVehicle(e.target.value)}
-            required
-          >
-            <option value="">Select vehicle…</option>
-            {vehicles.map((v) => (
-              <option
-                key={v.id}
-                value={v.id}
-                title={`ID ${v.id}`}
+            <form
+              onSubmit={handleCreate}
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+            >
+              <Select
+                label="Route"
+                name="trip_route"
+                value={cRoute}
+                onChange={(e) => setCRoute(e.target.value)}
+                required
               >
-                {vehicleDisplayName(v) || `Vehicle #${v.id}`}
-              </option>
-            ))}
-          </Select>
-          <Select label="Driver (optional)" value={cDriver} onChange={(e) => setCDriver(e.target.value)}>
-            <option value="">No driver</option>
-            {driverOptions.map((u) => (
-              <option key={u.id} value={u.id} title={`ID ${u.id}`}>
-                {driverDisplayName(u) || `Driver #${u.id}`}
-              </option>
-            ))}
-          </Select>
-          <Input
-            label="Departure"
-            type="datetime-local"
-            value={cDepart}
-            onChange={(e) => setCDepart(e.target.value)}
-            required
-          />
-          <Input
-            label="Arrival (optional)"
-            type="datetime-local"
-            value={cArrive}
-            onChange={(e) => setCArrive(e.target.value)}
-          />
-          <Input
-            label="Price"
-            type="number"
-            step="0.01"
-            min="0"
-            value={cPrice}
-            onChange={(e) => setCPrice(e.target.value)}
-            required
-          />
-          <Select
-            label="Status"
-            value={cStatus}
-            onChange={(e) => setCStatus(e.target.value)}
-          >
-            {TRIP_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </Select>
-          <div className="flex items-end">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Creating…" : "Create trip"}
-            </Button>
-          </div>
-        </form>
-      </Card>
-
-      <Card title="All trips">
-        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-          <Input
-            label="Search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="ID, route, vehicle, driver, status, time..."
-            className="min-w-[240px] sm:flex-1"
-          />
-          <Select
-            label="Status"
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="min-w-[150px]"
-          >
-            <option value="">All statuses</option>
-            {TRIP_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Sort by"
-            value={sortKey}
-            onChange={(e) => setSortKey(e.target.value)}
-            className="min-w-[150px]"
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Order"
-            value={sortDir}
-            onChange={(e) => setSortDir(e.target.value)}
-            className="min-w-[120px]"
-          >
-            <option value="desc">Desc</option>
-            <option value="asc">Asc</option>
-          </Select>
-          <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
-            Refresh
-          </Button>
-          <Button
-            variant="ghost"
-            className="!text-xs"
-            onClick={() => {
-              setSearch("");
-              setFilterStatus("");
-              setSortKey("departure_time");
-              setSortDir("desc");
-            }}
-          >
-            Clear
-          </Button>
+                <option value="">Select route…</option>
+                {routes.map((r) => (
+                  <option key={r.id} value={r.id} title={`Route ID ${r.id}`}>
+                    {r.origin} → {r.destination}
+                  </option>
+                ))}
+              </Select>
+              <Select
+                label="Vehicle"
+                name="trip_vehicle"
+                value={cVehicle}
+                onChange={(e) => setCVehicle(e.target.value)}
+                required
+              >
+                <option value="">Select vehicle…</option>
+                {vehicles.map((v) => (
+                  <option key={v.id} value={v.id} title={`ID ${v.id}`}>
+                    {vehicleDisplayName(v) || `Vehicle #${v.id}`}
+                  </option>
+                ))}
+              </Select>
+              <Select
+                label="Driver (optional)"
+                name="trip_driver"
+                value={cDriver}
+                onChange={(e) => setCDriver(e.target.value)}
+              >
+                <option value="">No driver</option>
+                {driverOptions.map((u) => (
+                  <option key={u.id} value={u.id} title={`ID ${u.id}`}>
+                    {driverDisplayName(u) || `Driver #${u.id}`}
+                  </option>
+                ))}
+              </Select>
+              <Input
+                label="Departure"
+                type="datetime-local"
+                name="trip_departure"
+                value={cDepart}
+                onChange={(e) => setCDepart(e.target.value)}
+                required
+              />
+              <Input
+                label="Arrival (optional)"
+                type="datetime-local"
+                name="trip_arrival"
+                value={cArrive}
+                onChange={(e) => setCArrive(e.target.value)}
+              />
+              <Input
+                label="Price"
+                type="number"
+                step="0.01"
+                min="0"
+                name="trip_price"
+                value={cPrice}
+                onChange={(e) => setCPrice(e.target.value)}
+                required
+              />
+              <Select
+                label="Status"
+                name="trip_status"
+                value={cStatus}
+                onChange={(e) => setCStatus(e.target.value)}
+              >
+                {TRIP_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </Select>
+              <div className="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-3">
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? "Creating…" : "Create trip"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setAddTripOpen(false);
+                    setError("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </Card>
         </div>
-        <p className="mb-2 text-xs text-slate-500">
-          Showing {filteredSorted.length} of {trips.length}
+      ) : null}
+
+      <Card
+        title="All trips"
+        subtitle="Search and filter by status. Sort columns by clicking the table headers (▲/▼)."
+      >
+        <div className="mb-4 flex flex-col gap-4 border-b border-primary-200/90 pb-4 dark:border-primary-900/25 sm:flex-row sm:flex-wrap sm:items-end">
+          <div className="max-w-md min-w-[200px] flex-1">
+            <Input
+              label="Search"
+              type="search"
+              name="trips_table_search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Id, route, vehicle, driver, status, time…"
+              autoComplete="off"
+              className="w-full"
+            />
+          </div>
+          <div className="min-w-[160px] sm:max-w-[200px]">
+            <Select
+              label="Status"
+              name="trips_filter_status"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="w-full"
+            >
+              <option value="">All statuses</option>
+              {TRIP_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+        <p className="mb-2 text-xs text-slate-600 dark:text-slate-500">
+          Showing{" "}
+          <span className="font-semibold text-slate-800 dark:text-slate-300">
+            {filteredSorted.length}
+          </span>{" "}
+          of{" "}
+          <span className="font-semibold text-slate-800 dark:text-slate-300">{trips.length}</span>{" "}
+          trips
+          {search.trim() || filterStatus ? " (filtered)" : ""}
         </p>
-        <div className="overflow-x-auto rounded-lg border border-primary-900/30">
+        <div className="overflow-x-auto rounded-lg border border-primary-200 bg-white shadow-sm dark:border-primary-900/40 dark:bg-slate-950/40 dark:shadow-none">
           <table className="w-full min-w-[1040px] border-collapse text-left text-sm">
-            <thead className="bg-slate-900/95 text-xs uppercase text-primary-400/90">
-              <tr className="border-b border-primary-900/40">
-                {[
-                  "Id",
-                  "Route",
-                  "Vehicle",
-                  "Driver",
-                  "Departure",
-                  "Arrival",
-                  "Price",
-                  "Status",
-                ].map((label) => {
-                  const key = HEADER_SORT_KEYS[label];
+            <thead className="sticky top-0 z-[1] border-b border-primary-200 bg-slate-50/95 text-xs uppercase tracking-wide text-primary-900 shadow-sm backdrop-blur-sm dark:border-primary-900/40 dark:bg-slate-900/95 dark:text-primary-400/95 dark:shadow-none">
+              <tr>
+                {TRIP_SORT_KEYS.map(({ key, label }) => {
+                  const active = sortKey === key;
                   return (
-                    <th key={label} className="px-2 py-2">
+                    <th key={key} scope="col" className="px-2 py-2.5 font-semibold">
                       <button
                         type="button"
-                        className="inline-flex items-center gap-1 hover:text-primary-300"
-                        onClick={() => handleHeaderSort(key)}
-                        title={`Sort by ${label}`}
+                        onClick={() => handleColumnSort(key)}
+                        className={cn(
+                          "flex w-full min-w-0 items-center justify-between gap-1 rounded-md px-1.5 py-1 text-left transition-colors",
+                          "text-slate-700 hover:bg-primary-100/90 hover:text-primary-950",
+                          "dark:text-primary-300/95 dark:hover:bg-white/10 dark:hover:text-primary-50",
+                          active &&
+                            "bg-primary-100/80 font-semibold text-primary-950 dark:bg-white/10 dark:font-semibold dark:text-primary-100"
+                        )}
+                        aria-sort={
+                          active
+                            ? sortDir === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : "none"
+                        }
                       >
-                        <span>{label}</span>
-                        <span className="w-3 text-center text-[10px]">
-                          {sortIndicator(key)}
+                        <span className="truncate">{label}</span>
+                        <span
+                          className="shrink-0 tabular-nums text-[0.65rem] text-slate-500 opacity-90 dark:text-primary-400/80"
+                          aria-hidden
+                        >
+                          {active ? (sortDir === "asc" ? "▲" : "▼") : "◇"}
                         </span>
                       </button>
                     </th>
                   );
                 })}
-                <th className="px-2 py-2">Actions</th>
+                <th
+                  scope="col"
+                  className="px-3 py-2.5 font-semibold text-slate-700 dark:text-primary-400/95"
+                >
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/90">
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800/80">
               {trips.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-3 py-8 text-center text-slate-500">
-                    No trips
+                  <td
+                    colSpan={9}
+                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
+                  >
+                    No trips — use the Add trip button above to create one.
                   </td>
                 </tr>
               ) : filteredSorted.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-3 py-8 text-center text-slate-500">
-                    No rows match your filters
+                  <td
+                    colSpan={9}
+                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
+                  >
+                    No trips match your search or status filter.{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-primary-700 underline decoration-primary-300 underline-offset-2 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+                      onClick={() => {
+                        setSearch("");
+                        setFilterStatus("");
+                      }}
+                    >
+                      Clear filters
+                    </button>
                   </td>
                 </tr>
               ) : (
                 filteredSorted.map((t) => (
                   <Fragment key={t.id}>
-                    <tr className="hover:bg-slate-800/30">
-                      <td className="px-2 py-2 font-mono text-xs">{t.id}</td>
-                      <td className="max-w-[200px] truncate px-2 py-2 text-slate-300" title={String(t.route_id ?? "")}>
+                    <tr
+                      className={cn(
+                        "border-b border-slate-100 bg-white transition-colors hover:bg-primary-50/70",
+                        "dark:border-slate-800/60 dark:bg-slate-950/20 dark:hover:bg-slate-800/35"
+                      )}
+                    >
+                      <td className="whitespace-nowrap px-2 py-2.5 font-mono text-xs tabular-nums text-slate-600 dark:text-slate-400">
+                        {t.id}
+                      </td>
+                      <td
+                        className="max-w-[200px] truncate px-2 py-2.5 font-medium text-apptext dark:text-slate-100"
+                        title={String(t.route_id ?? "")}
+                      >
                         {tripRouteLabel(t.route_id)}
                       </td>
-                      <td className="max-w-[180px] truncate px-2 py-2 text-slate-300" title={String(t.vehicle_id ?? "")}>
+                      <td
+                        className="max-w-[180px] truncate px-2 py-2.5 text-slate-800 dark:text-slate-200"
+                        title={String(t.vehicle_id ?? "")}
+                      >
                         {tripVehicleLabel(t.vehicle_id)}
                       </td>
-                      <td className="max-w-[140px] truncate px-2 py-2 text-slate-300" title={t.driver_id != null ? String(t.driver_id) : ""}>
+                      <td
+                        className="max-w-[140px] truncate px-2 py-2.5 text-slate-800 dark:text-slate-300"
+                        title={t.driver_id != null ? String(t.driver_id) : ""}
+                      >
                         {tripDriverLabel(t.driver_id)}
                       </td>
-                      <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">
+                      <td className="whitespace-nowrap px-2 py-2.5 text-xs text-slate-600 dark:text-slate-400">
                         {formatDate(t.departure_time)}
                       </td>
-                      <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">
+                      <td className="whitespace-nowrap px-2 py-2.5 text-xs text-slate-600 dark:text-slate-400">
                         {t.arrival_time ? formatDate(t.arrival_time) : "—"}
                       </td>
-                      <td className="px-2 py-2">{t.price}</td>
-                      <td className="px-2 py-2">{t.status}</td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2.5 tabular-nums text-slate-800 dark:text-slate-300">
+                        {t.price}
+                      </td>
+                      <td className="px-2 py-2.5 text-slate-800 dark:text-slate-300">
+                        {t.status}
+                      </td>
+                      <td className="px-2 py-2.5">
                         <div className="flex gap-1">
                           <IconButton
                             variant="ghost"
@@ -669,7 +741,7 @@ export function AdminTripsPage() {
                       </td>
                     </tr>
                     {editingId === t.id ? (
-                      <tr className="bg-primary-950/20">
+                      <tr className="border-b border-slate-100 bg-primary-50/90 dark:border-slate-800/60 dark:bg-primary-950/25">
                         <td colSpan={9} className="p-4">
                           <form onSubmit={handleUpdate} className="space-y-3">
                             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/useAuth.js";
 import { cargoService } from "@/services/cargo.service.js";
-import { cargoReceiptsService } from "@/services/cargoReceipts.service.js";
 import { paymentService } from "@/services/payment.service.js";
 import { ticketsService } from "@/services/tickets.service.js";
 import { profileService } from "@/services/profile.service.js";
@@ -71,7 +70,6 @@ export function PassengerDashboardPage() {
   const auth = useAuth();
   const [tickets, setTickets] = useState([]);
   const [cargo, setCargo] = useState([]);
-  const [cargoReceipts, setCargoReceipts] = useState([]);
   const [trips, setTrips] = useState([]);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -97,16 +95,14 @@ export function PassengerDashboardPage() {
   const loadAll = useCallback(async (opts = { quiet: false }) => {
     setError("");
     try {
-      const [tRaw, cRaw, rRaw, p, trRaw] = await Promise.all([
+      const [tRaw, cRaw, p, trRaw] = await Promise.all([
         ticketsService.list(),
         cargoService.list(),
-        cargoReceiptsService.listMine().catch(() => []),
         profileService.getProfile().catch(() => null),
         tripsService.list().catch(() => []),
       ]);
       setTickets(normalizeList(tRaw));
       setCargo(normalizeList(cRaw));
-      setCargoReceipts(normalizeList(rRaw));
       setTrips(normalizeList(trRaw));
       setProfile(p && typeof p === "object" ? p : null);
       setLastSync(new Date());
@@ -185,9 +181,8 @@ export function PassengerDashboardPage() {
       activeTickets,
       cargoPending,
       totalCargo: cargo.length,
-      receiptCount: cargoReceipts.length,
     };
-  }, [tickets, cargo, cargoReceipts]);
+  }, [tickets, cargo]);
 
   useEffect(() => {
     if (loading) return;
@@ -418,7 +413,7 @@ export function PassengerDashboardPage() {
     }
   }
 
-  if (loading && !tickets.length && !cargo.length && !cargoReceipts.length) {
+  if (loading && !tickets.length && !cargo.length) {
     return (
       <div className="flex justify-center py-20">
         <Spinner />
@@ -493,8 +488,8 @@ export function PassengerDashboardPage() {
             {stats.totalCargo}
           </p>
           <p className="text-p-subtle text-xs">
-            {stats.cargoPending} pending · {stats.receiptCount} receipt
-            {stats.receiptCount === 1 ? "" : "s"}
+            {stats.cargoPending} pending shipment
+            {stats.cargoPending === 1 ? "" : "s"}
           </p>
         </Card>
       </div>
@@ -849,141 +844,6 @@ export function PassengerDashboardPage() {
                       </td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-      </Card>
-
-      <Card
-        className="!p-4 sm:!p-6"
-        title="Cargo receipts"
-        subtitle="Issued receipts for your shipments (staff creates these when payment is recorded)."
-      >
-        {cargoReceipts.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            No receipts yet. They appear here after staff records payment for your
-            cargo.
-          </p>
-        ) : (
-          <>
-            <ul className="space-y-3 lg:hidden">
-              {cargoReceipts.map((r) => {
-                const brief = r.brief_description?.trim() || "";
-                const route =
-                  (r.route_summary || "").trim() &&
-                  (r.route_summary || "").trim() !== "→"
-                    ? r.route_summary
-                    : "—";
-                return (
-                  <li
-                    key={r.id}
-                    className="rounded-xl border border-primary-200/70 bg-white/95 p-3.5 dark:border-white/10 dark:bg-slate-900/40"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-mono text-sm font-semibold text-slate-200">
-                        Receipt #{r.id}
-                      </span>
-                      <span
-                        className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${statusTone(r.cargo_status)}`}
-                      >
-                        {r.cargo_status ?? "—"}
-                      </span>
-                    </div>
-                    <p className="text-p-muted mt-1 text-xs">
-                      Issued {formatDate(r.issued_at)}
-                    </p>
-                    <dl className="mt-3 space-y-2 text-sm">
-                      <div className="flex flex-wrap justify-between gap-2">
-                        <dt className="text-slate-500">Amount</dt>
-                        <dd className="font-medium">{formatMoney(r.amount)}</dd>
-                      </div>
-                      <div className="flex flex-wrap justify-between gap-2">
-                        <dt className="text-slate-500">Cargo</dt>
-                        <dd className="font-mono text-xs">#{r.cargo_id ?? "—"}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-slate-500">Route</dt>
-                        <dd className="mt-0.5 break-words">{route}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-slate-500">Tracking</dt>
-                        <dd className="mt-0.5 break-all font-mono text-xs">
-                          {r.tracking_code || "—"}
-                        </dd>
-                      </div>
-                      {brief ? (
-                        <div>
-                          <dt className="text-slate-500">Summary</dt>
-                          <dd className="mt-0.5 break-words text-xs text-slate-400">
-                            {brief}
-                          </dd>
-                        </div>
-                      ) : null}
-                    </dl>
-                  </li>
-                );
-              })}
-            </ul>
-
-            <div className="hidden overflow-x-auto lg:block">
-              <table className="w-full min-w-[800px] text-left text-sm">
-                <thead>
-                  <tr className="border-b border-primary-200 text-xs uppercase text-slate-500 dark:border-white/10">
-                    <th className="pb-2 pr-3 font-medium">Receipt</th>
-                    <th className="pb-2 pr-3 font-medium">Issued</th>
-                    <th className="pb-2 pr-3 font-medium">Amount</th>
-                    <th className="pb-2 pr-3 font-medium">Cargo</th>
-                    <th className="pb-2 pr-3 font-medium">Route</th>
-                    <th className="pb-2 pr-3 font-medium">Tracking</th>
-                    <th className="pb-2 pr-3 font-medium">Summary</th>
-                    <th className="pb-2 font-medium">Shipment status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cargoReceipts.map((r) => {
-                    const brief = r.brief_description?.trim() || "";
-                    const briefShort =
-                      brief.length > 48 ? `${brief.slice(0, 45)}…` : brief;
-                    return (
-                      <tr
-                        key={r.id}
-                        className="text-p-body border-b border-primary-100 last:border-0 dark:border-white/5"
-                      >
-                        <td className="py-3 pr-3 font-mono text-xs">#{r.id}</td>
-                        <td className="text-p-muted py-3 pr-3 text-xs">
-                          {formatDate(r.issued_at)}
-                        </td>
-                        <td className="py-3 pr-3">{formatMoney(r.amount)}</td>
-                        <td className="py-3 pr-3 font-mono text-xs">
-                          #{r.cargo_id ?? "—"}
-                        </td>
-                        <td className="max-w-[10rem] break-words py-3 pr-3">
-                          {(r.route_summary || "").trim() &&
-                          (r.route_summary || "").trim() !== "→"
-                            ? r.route_summary
-                            : "—"}
-                        </td>
-                        <td className="py-3 pr-3 font-mono text-xs">
-                          {r.tracking_code || "—"}
-                        </td>
-                        <td
-                          className="text-p-muted max-w-[12rem] truncate py-3 pr-3 text-xs"
-                          title={brief || undefined}
-                        >
-                          {briefShort || "—"}
-                        </td>
-                        <td className="py-3">
-                          <span
-                            className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${statusTone(r.cargo_status)}`}
-                          >
-                            {r.cargo_status ?? "—"}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
                 </tbody>
               </table>
             </div>

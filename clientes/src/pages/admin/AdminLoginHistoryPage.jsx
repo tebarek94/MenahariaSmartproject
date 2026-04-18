@@ -9,6 +9,7 @@ import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
 import { formatDate } from "@/utils/format.js";
+import { cn } from "@/utils/cn.js";
 import { DeleteModal } from "@/components/DeleteModal.jsx";
 
 export function AdminLoginHistoryPage() {
@@ -226,30 +227,38 @@ export function AdminLoginHistoryPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="space-y-1">
-        <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-white">
-          Login History
-        </h2>
-        <p className="text-sm text-primary-400/80">
+        <h1 className="text-p-heading text-xl font-bold tracking-tight sm:text-2xl">
+          Login history
+        </h1>
+        <p className="text-p-muted max-w-xl text-sm sm:text-[0.95rem]">
           Logins are recorded automatically when users sign in. This list refreshes on load, every
           minute while you stay on this page, and when you return to the tab.
         </p>
       </div>
 
       {notice ? (
-        <div className="rounded-lg border border-green-500/30 bg-green-900/20 px-4 py-3 text-sm text-green-400">
+        <p
+          className="rounded-lg border border-emerald-200/90 bg-emerald-50/95 px-3 py-2 text-sm text-emerald-900 shadow-sm dark:border-primary-800/50 dark:bg-primary-950/40 dark:text-primary-200 dark:shadow-none"
+          role="status"
+        >
           {notice}
-        </div>
+        </p>
       ) : null}
       {error ? (
-        <div className="rounded-lg border border-red-500/30 bg-red-900/20 px-4 py-3 text-sm text-red-400">
+        <p
+          className="rounded-lg border border-red-200 bg-red-50/95 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-300"
+          role="alert"
+        >
           {error}
-        </div>
+        </p>
       ) : null}
 
-      {/* Search and Filter Controls */}
-      <Card title="Search & Filter" className="!p-6">
+      <Card
+        title="Search & filter"
+        subtitle="Narrow the table by device, IP, user, or date range."
+      >
         <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
           <Input
             placeholder="Search by device, IP, or user ID..."
@@ -297,8 +306,10 @@ export function AdminLoginHistoryPage() {
         </div>
       </Card>
 
-      {/* Create New Record */}
-      <Card title="Create Login History Record" className="!p-6">
+      <Card
+        title="Create login history record"
+        subtitle="Optional manual entry for testing or corrections. Most rows are created at sign-in."
+      >
         <form
           onSubmit={handleCreate}
           className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
@@ -331,76 +342,95 @@ export function AdminLoginHistoryPage() {
         </form>
       </Card>
 
-      {/* Login History Table */}
-      <Card title="Login History Records" className="!p-6">
-        <div className="mb-4 flex justify-between items-center">
-          <div className="text-sm text-primary-400/80">
+      <Card
+        title="Login history records"
+        subtitle="Edit or delete rows as needed. Filters above only affect this view."
+      >
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-sm text-slate-600 dark:text-slate-400">
             Showing {filteredRows.length} of {rows.length} records
           </div>
-          <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
+          <Button variant="ghost" className="!text-xs" type="button" onClick={() => refresh()}>
             Refresh now
           </Button>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border border-primary-900/30">
+        <div className="overflow-x-auto rounded-lg border border-primary-200 bg-white shadow-sm dark:border-primary-900/40 dark:bg-slate-950/40 dark:shadow-none">
           <table className="w-full min-w-[800px] border-collapse text-left text-sm">
-            <thead className="bg-slate-900/95 text-xs uppercase text-primary-400/90">
-              <tr className="border-b border-primary-900/40">
-                <th className="px-4 py-3 text-left font-medium">ID</th>
-                <th className="px-4 py-3 text-left font-medium">User</th>
-                <th className="px-4 py-3 text-left font-medium">Device Info</th>
-                <th className="px-4 py-3 text-left font-medium">IP Address</th>
-                <th className="px-4 py-3 text-left font-medium">Login Time</th>
-                <th className="px-4 py-3 text-center font-medium">Actions</th>
+            <thead className="border-b border-primary-200 bg-slate-50/95 text-xs uppercase tracking-wide text-primary-900 shadow-sm backdrop-blur-sm dark:border-primary-900/40 dark:bg-slate-900/95 dark:text-primary-400/95 dark:shadow-none">
+              <tr>
+                <th className="px-4 py-2.5 font-semibold">ID</th>
+                <th className="px-4 py-2.5 font-semibold">User</th>
+                <th className="px-4 py-2.5 font-semibold">Device info</th>
+                <th className="px-4 py-2.5 font-semibold">IP address</th>
+                <th className="px-4 py-2.5 font-semibold">Login time</th>
+                <th className="px-4 py-2.5 text-center font-semibold text-slate-700 dark:text-primary-400/95">
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/90">
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800/80">
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
+                  <td
+                    colSpan={6}
+                    className="bg-white px-4 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
+                  >
                     <div className="space-y-2">
-                      <p className="text-lg font-medium">No login history records found</p>
-                      <p className="text-sm">Try adjusting your search filters or create a new record</p>
+                      <p className="text-base font-medium text-slate-800 dark:text-slate-200">
+                        No login history records found
+                      </p>
+                      <p className="text-sm">
+                        Try adjusting your search filters or create a new record above.
+                      </p>
                     </div>
                   </td>
                 </tr>
               ) : (
                 filteredRows.map((r) => (
                   <Fragment key={r.id}>
-                    <tr className="hover:bg-slate-800/30 transition-colors">
-                      <td className="px-4 py-3 font-mono text-xs text-primary-300">#{r.id}</td>
-                      <td className="px-4 py-3">
+                    <tr
+                      className={cn(
+                        "border-b border-slate-100 bg-white transition-colors hover:bg-primary-50/70",
+                        "dark:border-slate-800/60 dark:bg-slate-950/20 dark:hover:bg-slate-800/35"
+                      )}
+                    >
+                      <td className="px-4 py-2.5 font-mono text-xs tabular-nums text-slate-600 dark:text-primary-300">
+                        #{r.id}
+                      </td>
+                      <td className="px-4 py-2.5">
                         {r.user_id ? (
                           <div className="flex items-center space-x-2">
-                            <div className="h-6 w-6 rounded-full bg-primary-500/20 flex items-center justify-center">
-                              <span className="text-xs font-medium text-primary-300">
+                            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-100 dark:bg-primary-500/20">
+                              <span className="text-xs font-medium text-primary-800 dark:text-primary-300">
                                 {getUserName(r.user_id).charAt(0).toUpperCase()}
                               </span>
                             </div>
-                            <span className="text-slate-300">{getUserName(r.user_id)}</span>
+                            <span className="font-medium text-apptext dark:text-slate-100">
+                              {getUserName(r.user_id)}
+                            </span>
                           </div>
                         ) : (
-                          <span className="text-slate-500">—</span>
+                          <span className="text-slate-500 dark:text-slate-500">—</span>
                         )}
                       </td>
-                      <td className="max-w-[200px] truncate px-4 py-3 text-slate-400">
+                      <td className="max-w-[200px] truncate px-4 py-2.5 text-slate-800 dark:text-slate-300">
                         {r.device_info || "—"}
                       </td>
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-xs text-slate-400">
+                      <td className="px-4 py-2.5">
+                        <span className="font-mono text-xs text-slate-600 dark:text-slate-400">
                           {r.ip_address || "—"}
                         </span>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">
+                      <td className="whitespace-nowrap px-4 py-2.5 text-xs text-slate-600 dark:text-slate-400">
                         {formatDate(r.login_time)}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-2.5">
                         <div className="flex justify-center gap-1">
                           <IconButton
                             variant="ghost"
                             label="Edit"
                             onClick={() => openEdit(r)}
-                            className="hover:bg-primary-800/30"
                           >
                             <PencilIcon />
                           </IconButton>
@@ -408,7 +438,6 @@ export function AdminLoginHistoryPage() {
                             variant="danger"
                             label="Delete"
                             onClick={() => handleRemove(r.id)}
-                            className="hover:bg-red-900/30"
                           >
                             <TrashIcon />
                           </IconButton>
@@ -416,7 +445,7 @@ export function AdminLoginHistoryPage() {
                       </td>
                     </tr>
                     {editingId === r.id ? (
-                      <tr className="bg-primary-950/20">
+                      <tr className="border-b border-slate-100 bg-primary-50/90 dark:border-slate-800/60 dark:bg-primary-950/25">
                         <td colSpan={6} className="p-4">
                           <form onSubmit={handleUpdate} className="space-y-4">
                             <div className="grid gap-4 sm:grid-cols-3">

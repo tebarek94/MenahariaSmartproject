@@ -16,6 +16,11 @@ import {
   verifyAndConsumeEmailOtp,
 } from "../utils/userTwoFactorEmailOtp.js";
 import { logAutoReportTask } from "../utils/reportActivity.js";
+import {
+  ethiopianPhoneVariants,
+  isValidEthiopianPhone,
+  normalizeEthiopianPhone,
+} from "../utils/ethiopianPhone.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -61,9 +66,19 @@ async function resolveRoleName(user) {
 }
 
 async function authenticateByPhonePassword(phone, password) {
-  const results = await queryAsync("SELECT * FROM users WHERE phone = ?", [
-    phone,
-  ]);
+  const phoneCandidates = ethiopianPhoneVariants(phone);
+  if (!phoneCandidates.length) {
+    return {
+      ok: false,
+      status: 400,
+      body: { message: "Invalid Ethiopian phone format." },
+    };
+  }
+  const placeholders = phoneCandidates.map(() => "?").join(", ");
+  const results = await queryAsync(
+    `SELECT * FROM users WHERE phone IN (${placeholders}) ORDER BY id ASC LIMIT 1`,
+    phoneCandidates
+  );
   if (results.length === 0) {
     return { ok: false, status: 404, body: { message: "User not found" } };
   }
@@ -121,16 +136,38 @@ export const register = async (req, res) => {
   const { full_name, phone, email, password, role_id } = req.body;
 
   try {
+    const normalizedPhone = normalizeEthiopianPhone(phone);
+    if (!normalizedPhone) {
+      return res.status(400).json({
+        message:
+          "Enter a valid Ethiopian phone number (e.g. 0912345678 or +251912345678).",
+      });
+    }
+    const emailNorm = normalizeEmail(email);
+    const phoneCandidates = ethiopianPhoneVariants(normalizedPhone);
+    const placeholders = phoneCandidates.map(() => "?").join(", ");
+    const taken = await queryAsync(
+      `SELECT id FROM users
+       WHERE phone IN (${placeholders})
+          OR (email IS NOT NULL AND TRIM(email) <> '' AND LOWER(TRIM(email)) = ?)
+       LIMIT 1`,
+      [...phoneCandidates, emailNorm]
+    );
+    if (taken.length > 0) {
+      return res.status(409).json({
+        message: "An account already exists with this phone or email.",
+      });
+    }
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const data = [full_name, phone, email, hashedPassword, role_id];
+    const data = [full_name, normalizedPhone, emailNorm || null, hashedPassword, role_id];
 
     userModel.createUser(data, (err, result) => {
       if (err) return res.status(500).json(err);
 
       void logAutoReportTask({
         type: "user_register",
-        summary: `Self-registration: ${full_name} (${phone})`,
+        summary: `Self-registration: ${full_name} (${normalizedPhone})`,
         date_range: result?.insertId ? `user_id:${result.insertId}` : null,
       });
       res.json({ message: "User registered successfully" });
@@ -145,11 +182,17 @@ export const registerPassengerStart = async (req, res) => {
   try {
     const { full_name, phone, email, password, role_id } = req.body;
     const name = String(full_name ?? "").trim();
-    const phoneNorm = String(phone ?? "").trim();
+    const phoneNorm = normalizeEthiopianPhone(phone);
     const emailNorm = normalizeEmail(email);
 
     if (!name || !phoneNorm) {
       return res.status(400).json({ message: "Full name and phone are required." });
+    }
+    if (!isValidEthiopianPhone(phoneNorm)) {
+      return res.status(400).json({
+        message:
+          "Enter a valid Ethiopian phone number (e.g. 0912345678 or +251912345678).",
+      });
     }
     if (!isValidEmailShape(emailNorm)) {
       return res.status(400).json({ message: "A valid email is required to verify your account." });
@@ -171,12 +214,14 @@ export const registerPassengerStart = async (req, res) => {
       return res.status(403).json({ message: "This sign-up flow is only for passenger accounts." });
     }
 
+    const phoneCandidates = ethiopianPhoneVariants(phoneNorm);
+    const placeholders = phoneCandidates.map(() => "?").join(", ");
     const taken = await queryAsync(
       `SELECT id FROM users
-       WHERE phone = ?
+       WHERE phone IN (${placeholders})
           OR (email IS NOT NULL AND TRIM(email) <> '' AND LOWER(TRIM(email)) = ?)
        LIMIT 1`,
-      [phoneNorm, emailNorm]
+      [...phoneCandidates, emailNorm]
     );
     if (taken.length > 0) {
       return res.status(409).json({
@@ -303,12 +348,22 @@ export const registerPassengerVerify = async (req, res) => {
       return res.status(401).json({ message: "Invalid verification code." });
     }
 
+    const verifiedPhone = normalizeEthiopianPhone(row.phone);
+    if (!verifiedPhone) {
+      await queryAsync("DELETE FROM passenger_registration_pending WHERE id = ?", [row.id]);
+      await queryAsync("COMMIT");
+      return res.status(400).json({
+        message: "Stored registration phone is invalid. Please start registration again.",
+      });
+    }
+    const phoneCandidates = ethiopianPhoneVariants(verifiedPhone);
+    const placeholders = phoneCandidates.map(() => "?").join(", ");
     const taken = await queryAsync(
       `SELECT id FROM users
-       WHERE phone = ?
+       WHERE phone IN (${placeholders})
           OR (email IS NOT NULL AND TRIM(email) <> '' AND LOWER(TRIM(email)) = ?)
        LIMIT 1`,
-      [row.phone, emailNorm]
+      [...phoneCandidates, emailNorm]
     );
     if (taken.length > 0) {
       await queryAsync("DELETE FROM passenger_registration_pending WHERE id = ?", [row.id]);
@@ -320,7 +375,7 @@ export const registerPassengerVerify = async (req, res) => {
 
     const insertResult = await createUserAsync(
       row.full_name,
-      row.phone,
+      verifiedPhone,
       row.email,
       row.password_hash,
       row.role_id,
@@ -332,7 +387,7 @@ export const registerPassengerVerify = async (req, res) => {
 
     void logAutoReportTask({
       type: "user_register",
-      summary: `Passenger verified email: ${row.full_name} (${row.phone})`,
+      summary: `Passenger verified email: ${row.full_name} (${verifiedPhone})`,
       date_range: insertResult?.insertId ? `user_id:${insertResult.insertId}` : null,
     });
 

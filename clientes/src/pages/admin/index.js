@@ -10,7 +10,6 @@ export { AdminRoutesPage } from "./AdminRoutesPage.jsx";
 export { AdminTripsPage } from "./AdminTripsPage.jsx";
 export { AdminSeatsPage } from "./AdminSeatsPage.jsx";
 export { AdminPaymentsPage } from "./AdminPaymentsPage.jsx";
-export { AdminCargoReceiptsPage } from "./AdminCargoReceiptsPage.jsx";
 export { AdminLoginHistoryPage } from "./AdminLoginHistoryPage.jsx";
 export { AdminNotificationsPage } from "./AdminNotificationsPage.jsx";
 export { AdminSupportChatPage } from "./AdminSupportChatPage.jsx";

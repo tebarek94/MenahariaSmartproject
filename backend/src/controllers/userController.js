@@ -11,6 +11,10 @@ import {
 import { sendSuccess, sendError } from "../utils/apiResponse.js";
 import { isAdmin } from "../constants/roles.js";
 import { logAutoReportTask } from "../utils/reportActivity.js";
+import {
+  ethiopianPhoneVariants,
+  normalizeEthiopianPhone,
+} from "../utils/ethiopianPhone.js";
 
 function stripUserSecrets(row) {
   if (!row || typeof row !== "object") return row;
@@ -19,6 +23,24 @@ function stripUserSecrets(row) {
     rest.two_factor_enabled = Boolean(Number(rest.two_factor_enabled ?? 0));
   }
   return rest;
+}
+
+const ETHIOPIAN_PHONE_ERROR =
+  "Enter a valid Ethiopian phone number (e.g. 0912345678 or +251912345678).";
+
+async function findUserByPhoneVariants(phone, excludeId = null) {
+  const variants = ethiopianPhoneVariants(phone);
+  if (!variants.length) return null;
+  const placeholders = variants.map(() => "?").join(", ");
+  const params = [...variants];
+  let sql = `SELECT id FROM users WHERE phone IN (${placeholders})`;
+  if (excludeId != null) {
+    sql += " AND id <> ?";
+    params.push(Number(excludeId));
+  }
+  sql += " LIMIT 1";
+  const rows = await queryAsync(sql, params);
+  return rows[0] ?? null;
 }
 
 export const create = async (req, res) => {
@@ -30,10 +52,18 @@ export const create = async (req, res) => {
     if (!full_name || !phone || !password || role_id == null) {
       return sendError(res, "full_name, phone, password, and role_id are required", 400);
     }
+    const normalizedPhone = normalizeEthiopianPhone(phone);
+    if (!normalizedPhone) {
+      return sendError(res, ETHIOPIAN_PHONE_ERROR, 400);
+    }
+    const existing = await findUserByPhoneVariants(normalizedPhone);
+    if (existing) {
+      return sendError(res, "A user with this phone number already exists", 409);
+    }
     const passwordHash = await bcrypt.hash(password, 10);
     const result = await createUserAsync(
       full_name,
-      phone,
+      normalizedPhone,
       email,
       passwordHash,
       Number(role_id),
@@ -41,7 +71,7 @@ export const create = async (req, res) => {
     );
     void logAutoReportTask({
       type: "user_created",
-      summary: `Admin created user #${result.insertId}: ${full_name} (${phone})`,
+      summary: `Admin created user #${result.insertId}: ${full_name} (${normalizedPhone})`,
       date_range: `user_id:${result.insertId}`,
     });
     return sendSuccess(res, { message: "User created", id: result.insertId }, 201);
@@ -103,6 +133,14 @@ export const update = async (req, res) => {
     ) {
       return sendError(res, "full_name, phone, and email are required", 400);
     }
+    const normalizedPhone = normalizeEthiopianPhone(phone);
+    if (!normalizedPhone) {
+      return sendError(res, ETHIOPIAN_PHONE_ERROR, 400);
+    }
+    const phoneOwner = await findUserByPhoneVariants(normalizedPhone, id);
+    if (phoneOwner) {
+      return sendError(res, "A user with this phone number already exists", 409);
+    }
     let finalRoleId = role_id;
     let finalStatus = status;
     if (!isAdmin(req.roleName)) {
@@ -119,10 +157,10 @@ export const update = async (req, res) => {
       const passwordHash = await bcrypt.hash(password, 10);
       await queryAsync(
         `UPDATE users SET full_name = ?, phone = ?, email = ?, role_id = ?, status = ?, password_hash = ? WHERE id = ?`,
-        [full_name, phone, email, finalRoleId, finalStatus, passwordHash, id]
+        [full_name, normalizedPhone, email, finalRoleId, finalStatus, passwordHash, id]
       );
     } else {
-      await updateUserAsync(id, full_name, phone, email, finalRoleId, finalStatus);
+      await updateUserAsync(id, full_name, normalizedPhone, email, finalRoleId, finalStatus);
     }
     return sendSuccess(res, { message: "User updated" });
   } catch (err) {

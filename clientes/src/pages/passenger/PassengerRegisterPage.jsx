@@ -7,6 +7,12 @@ import { PasswordFieldWithToggle } from "@/components/auth/PasswordFieldWithTogg
 import { Button } from "@/ui/Button.jsx";
 import { Input } from "@/ui/Input.jsx";
 import { ROUTES } from "@/utils/constants.js";
+import {
+  ETHIOPIAN_PHONE_ERROR,
+  formatEthiopianPhoneForInput,
+  isValidEthiopianPhone,
+  normalizeEthiopianPhone,
+} from "@/utils/ethiopianPhone.js";
 
 /** Must match `roles.id` for passenger (schema default: 3 = passenger). */
 const PASSENGER_ROLE_ID =
@@ -52,9 +58,13 @@ export function PassengerRegisterPage() {
     setHint("");
     setLoading(true);
     try {
+      const phoneValue = normalizeEthiopianPhone(phone);
+      if (!isValidEthiopianPhone(phoneValue)) {
+        throw new Error(ETHIOPIAN_PHONE_ERROR);
+      }
       const data = await authService.registerPassengerStart({
         full_name: full_name.trim(),
-        phone: phone.trim(),
+        phone: phoneValue,
         email: email.trim(),
         password,
         role_id: PASSENGER_ROLE_ID,
@@ -99,9 +109,13 @@ export function PassengerRegisterPage() {
     setHint("");
     setLoading(true);
     try {
+      const phoneValue = normalizeEthiopianPhone(phone);
+      if (!isValidEthiopianPhone(phoneValue)) {
+        throw new Error(ETHIOPIAN_PHONE_ERROR);
+      }
       const data = await authService.registerPassengerStart({
         full_name: full_name.trim(),
-        phone: phone.trim(),
+        phone: phoneValue,
         email: email.trim(),
         password,
         role_id: PASSENGER_ROLE_ID,
@@ -163,10 +177,10 @@ export function PassengerRegisterPage() {
             label="Phone"
             type="tel"
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={(e) => setPhone(formatEthiopianPhoneForInput(e.target.value))}
             required
             autoComplete="tel"
-            placeholder="09xxxxxxxx"
+            placeholder="0912345678"
           />
           <Input
             label="Email"

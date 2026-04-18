@@ -9,25 +9,18 @@ import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
 import { DeleteModal } from "@/components/DeleteModal.jsx";
 import { formatDate } from "@/utils/format.js";
+import { cn } from "@/utils/cn.js";
 
 const VEHICLE_STATUSES = ["active", "inactive", "maintenance"];
-const SORT_OPTIONS = [
-  { value: "id", label: "ID" },
-  { value: "plate_number", label: "Plate" },
-  { value: "model", label: "Model" },
-  { value: "capacity", label: "Capacity" },
-  { value: "status", label: "Status" },
-  { value: "created_at", label: "Created" },
-];
 
-const HEADER_SORT_KEYS = {
-  Id: "id",
-  Plate: "plate_number",
-  Model: "model",
-  Capacity: "capacity",
-  Status: "status",
-  Created: "created_at",
-};
+const VEHICLE_SORT_KEYS = [
+  { key: "id", label: "Id" },
+  { key: "plate_number", label: "Plate" },
+  { key: "model", label: "Model" },
+  { key: "capacity", label: "Capacity" },
+  { key: "status", label: "Status" },
+  { key: "created_at", label: "Created" },
+];
 
 function normalizeList(x) {
   return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
@@ -47,6 +40,7 @@ export function AdminVehiclesPage() {
   const [sortKey, setSortKey] = useState("created_at");
   const [sortDir, setSortDir] = useState("desc");
 
+  const [addVehicleOpen, setAddVehicleOpen] = useState(false);
   const [cPlate, setCPlate] = useState("");
   const [cModel, setCModel] = useState("");
   const [cCapacity, setCCapacity] = useState("");
@@ -105,6 +99,7 @@ export function AdminVehiclesPage() {
       setCModel("");
       setCCapacity("");
       setCStatus("active");
+      setAddVehicleOpen(false);
       await refreshList();
     } catch (e) {
       setError(
@@ -242,7 +237,7 @@ export function AdminVehiclesPage() {
     return rows;
   }, [vehicles, search, filterStatus, sortKey, sortDir]);
 
-  function handleHeaderSort(key) {
+  function handleColumnSort(key) {
     if (!key) return;
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -250,11 +245,6 @@ export function AdminVehiclesPage() {
     }
     setSortKey(key);
     setSortDir("asc");
-  }
-
-  function sortIndicator(key) {
-    if (sortKey !== key) return "↕";
-    return sortDir === "asc" ? "↑" : "↓";
   }
 
   function openEdit(v) {
@@ -288,192 +278,260 @@ export function AdminVehiclesPage() {
 
   return (
     <div className="space-y-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-p-heading text-xl font-bold tracking-tight sm:text-2xl">
+            Vehicles
+          </h1>
+          <p className="text-p-muted max-w-xl text-sm sm:text-[0.95rem]">
+            Manage fleet capacity and status. Use{" "}
+            <strong className="font-semibold text-p-heading">Add vehicle</strong> to open the
+            form. Plate can be auto-generated when left empty.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant={addVehicleOpen ? "secondary" : "primary"}
+          className="shrink-0"
+          onClick={() => {
+            setAddVehicleOpen((o) => !o);
+            setError("");
+          }}
+          aria-expanded={addVehicleOpen}
+          aria-controls="admin-add-vehicle-panel"
+        >
+          {addVehicleOpen ? "Close form" : "Add vehicle"}
+        </Button>
+      </div>
 
       {notice ? (
-        <p className="rounded-lg border border-primary-800/50 bg-primary-950/40 px-3 py-2 text-sm text-primary-200">
+        <p
+          className="rounded-lg border border-emerald-200/90 bg-emerald-50/95 px-3 py-2 text-sm text-emerald-900 shadow-sm dark:border-primary-800/50 dark:bg-primary-950/40 dark:text-primary-200 dark:shadow-none"
+          role="status"
+        >
           {notice}
         </p>
       ) : null}
       {error ? (
-        <p className="text-sm text-red-400" role="alert">
+        <p
+          className="rounded-lg border border-red-200 bg-red-50/95 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-300"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
 
-      <Card
-        title="Add vehicle"
-        subtitle="capacity required; model and custom plate optional"
-      >
-        <form
-          onSubmit={handleCreate}
-          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
-        >
-          <Input
-            label="Plate number (optional)"
-            value={cPlate}
-            onChange={(e) => setCPlate(e.target.value)}
-            placeholder="Auto-generated if empty"
-          />
-          <Input
-            label="Model (optional)"
-            value={cModel}
-            onChange={(e) => setCModel(e.target.value)}
-            placeholder="e.g. Toyota Hiace"
-          />
-          <Input
-            label="Capacity"
-            type="number"
-            min={1}
-            value={cCapacity}
-            onChange={(e) => setCCapacity(e.target.value)}
-            required
-          />
-          <Select
-            label="Status"
-            value={cStatus}
-            onChange={(e) => setCStatus(e.target.value)}
+      {addVehicleOpen ? (
+        <div id="admin-add-vehicle-panel">
+          <Card
+            title="Add vehicle"
+            subtitle="Capacity is required. Model and custom plate are optional (plate can be auto-generated)."
           >
-            {VEHICLE_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </Select>
-          <div className="flex items-end lg:col-span-4">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Creating…" : "Create vehicle"}
-            </Button>
-          </div>
-        </form>
-      </Card>
-
-      <Card title="Fleet">
-        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-          <Input
-            label="Search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="ID, plate, model, capacity, status..."
-            className="min-w-[220px] sm:flex-1"
-          />
-          <Select
-            label="Status"
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="min-w-[140px]"
-          >
-            <option value="">All statuses</option>
-            {VEHICLE_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Sort by"
-            value={sortKey}
-            onChange={(e) => setSortKey(e.target.value)}
-            className="min-w-[140px]"
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Order"
-            value={sortDir}
-            onChange={(e) => setSortDir(e.target.value)}
-            className="min-w-[120px]"
-          >
-            <option value="desc">Desc</option>
-            <option value="asc">Asc</option>
-          </Select>
-          <Button variant="ghost" className="!text-xs" onClick={() => refreshList()}>
-            Refresh
-          </Button>
-          <Button
-            variant="ghost"
-            className="!text-xs"
-            onClick={() => {
-              setSearch("");
-              setFilterStatus("");
-              setSortKey("created_at");
-              setSortDir("desc");
-            }}
-          >
-            Clear
-          </Button>
+            <form
+              onSubmit={handleCreate}
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+            >
+              <Input
+                label="Plate number (optional)"
+                name="vehicle_plate"
+                value={cPlate}
+                onChange={(e) => setCPlate(e.target.value)}
+                placeholder="Auto-generated if empty"
+              />
+              <Input
+                label="Model (optional)"
+                name="vehicle_model"
+                value={cModel}
+                onChange={(e) => setCModel(e.target.value)}
+                placeholder="e.g. Toyota Hiace"
+              />
+              <Input
+                label="Capacity"
+                type="number"
+                min={1}
+                name="vehicle_capacity"
+                value={cCapacity}
+                onChange={(e) => setCCapacity(e.target.value)}
+                required
+              />
+              <Select
+                label="Status"
+                name="vehicle_status"
+                value={cStatus}
+                onChange={(e) => setCStatus(e.target.value)}
+              >
+                {VEHICLE_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </Select>
+              <div className="flex flex-wrap items-end gap-2 lg:col-span-4">
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? "Creating…" : "Create vehicle"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setAddVehicleOpen(false);
+                    setError("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </Card>
         </div>
-        <p className="mb-2 text-xs text-slate-500">
-          Showing {filteredSorted.length} of {vehicles.length}
+      ) : null}
+
+      <Card
+        title="Fleet"
+        subtitle="Search and filter by status. Sort columns by clicking the table headers (▲/▼)."
+      >
+        <div className="mb-4 flex flex-col gap-4 border-b border-primary-200/90 pb-4 dark:border-primary-900/25 sm:flex-row sm:flex-wrap sm:items-end">
+          <div className="max-w-md min-w-[200px] flex-1">
+            <Input
+              label="Search"
+              type="search"
+              name="vehicles_table_search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Id, plate, model, capacity, status…"
+              autoComplete="off"
+              className="w-full"
+            />
+          </div>
+          <div className="min-w-[160px] sm:max-w-[200px]">
+            <Select
+              label="Status"
+              name="vehicles_filter_status"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="w-full"
+            >
+              <option value="">All statuses</option>
+              {VEHICLE_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+        <p className="mb-2 text-xs text-slate-600 dark:text-slate-500">
+          Showing{" "}
+          <span className="font-semibold text-slate-800 dark:text-slate-300">
+            {filteredSorted.length}
+          </span>{" "}
+          of{" "}
+          <span className="font-semibold text-slate-800 dark:text-slate-300">{vehicles.length}</span>{" "}
+          vehicles
+          {search.trim() || filterStatus ? " (filtered)" : ""}
         </p>
-        <div className="overflow-x-auto rounded-lg border border-primary-900/30">
-          <table className="w-full min-w-[640px] border-collapse text-left text-sm">
-            <thead className="sticky top-0 bg-slate-900/95 text-xs uppercase text-primary-400/90">
-              <tr className="border-b border-primary-900/40">
-                {["Id", "Plate", "Model", "Capacity", "Status", "Created"].map(
-                  (label) => {
-                    const key = HEADER_SORT_KEYS[label];
-                    return (
-                      <th key={label} className="px-3 py-2 font-semibold">
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1 hover:text-primary-300"
-                          onClick={() => handleHeaderSort(key)}
-                          title={`Sort by ${label}`}
+        <div className="overflow-x-auto rounded-lg border border-primary-200 bg-white shadow-sm dark:border-primary-900/40 dark:bg-slate-950/40 dark:shadow-none">
+          <table className="w-full min-w-[800px] border-collapse text-left text-sm">
+            <thead className="sticky top-0 z-[1] border-b border-primary-200 bg-slate-50/95 text-xs uppercase tracking-wide text-primary-900 shadow-sm backdrop-blur-sm dark:border-primary-900/40 dark:bg-slate-900/95 dark:text-primary-400/95 dark:shadow-none">
+              <tr>
+                {VEHICLE_SORT_KEYS.map(({ key, label }) => {
+                  const active = sortKey === key;
+                  return (
+                    <th key={key} scope="col" className="px-2 py-2.5 font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => handleColumnSort(key)}
+                        className={cn(
+                          "flex w-full min-w-0 items-center justify-between gap-1 rounded-md px-1.5 py-1 text-left transition-colors",
+                          "text-slate-700 hover:bg-primary-100/90 hover:text-primary-950",
+                          "dark:text-primary-300/95 dark:hover:bg-white/10 dark:hover:text-primary-50",
+                          active &&
+                            "bg-primary-100/80 font-semibold text-primary-950 dark:bg-white/10 dark:font-semibold dark:text-primary-100"
+                        )}
+                        aria-sort={
+                          active
+                            ? sortDir === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : "none"
+                        }
+                      >
+                        <span className="truncate">{label}</span>
+                        <span
+                          className="shrink-0 tabular-nums text-[0.65rem] text-slate-500 opacity-90 dark:text-primary-400/80"
+                          aria-hidden
                         >
-                          <span>{label}</span>
-                          <span className="w-3 text-center text-[10px]">
-                            {sortIndicator(key)}
-                          </span>
-                        </button>
-                      </th>
-                    );
-                  }
-                )}
-                <th className="px-3 py-2 font-semibold">Actions</th>
+                          {active ? (sortDir === "asc" ? "▲" : "▼") : "◇"}
+                        </span>
+                      </button>
+                    </th>
+                  );
+                })}
+                <th
+                  scope="col"
+                  className="px-3 py-2.5 font-semibold text-slate-700 dark:text-primary-400/95"
+                >
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/90">
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800/80">
               {vehicles.length === 0 ? (
                 <tr>
                   <td
                     colSpan={7}
-                    className="px-3 py-8 text-center text-slate-500"
+                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
                   >
-                    No vehicles
+                    No vehicles — use the Add vehicle button above to create one.
                   </td>
                 </tr>
               ) : filteredSorted.length === 0 ? (
                 <tr>
                   <td
                     colSpan={7}
-                    className="px-3 py-8 text-center text-slate-500"
+                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
                   >
-                    No rows match your filters
+                    No vehicles match your search or status filter.{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-primary-700 underline decoration-primary-300 underline-offset-2 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+                      onClick={() => {
+                        setSearch("");
+                        setFilterStatus("");
+                      }}
+                    >
+                      Clear filters
+                    </button>
                   </td>
                 </tr>
               ) : (
                 filteredSorted.map((v) => (
                   <Fragment key={v.id}>
-                    <tr className="bg-slate-950/30 hover:bg-slate-800/30">
-                      <td className="px-3 py-2 font-mono text-xs text-slate-400">
+                    <tr
+                      className={cn(
+                        "border-b border-slate-100 bg-white transition-colors hover:bg-primary-50/70",
+                        "dark:border-slate-800/60 dark:bg-slate-950/20 dark:hover:bg-slate-800/35"
+                      )}
+                    >
+                      <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs tabular-nums text-slate-600 dark:text-slate-400">
                         {v.id}
                       </td>
-                      <td className="px-3 py-2 font-medium text-primary-200">
+                      <td className="px-3 py-2.5 font-medium text-apptext dark:text-slate-100">
                         {v.plate_number}
                       </td>
-                      <td className="max-w-[160px] truncate px-3 py-2 text-slate-300">
+                      <td className="max-w-[160px] truncate px-3 py-2.5 text-slate-800 dark:text-slate-200">
                         {v.model ?? "—"}
                       </td>
-                      <td className="px-3 py-2 text-slate-300">{v.capacity}</td>
-                      <td className="px-3 py-2 text-slate-300">{v.status}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">
+                      <td className="px-3 py-2.5 tabular-nums text-slate-800 dark:text-slate-300">
+                        {v.capacity}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-800 dark:text-slate-300">
+                        {v.status}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-xs text-slate-600 dark:text-slate-400">
                         {formatDate(v.created_at)}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2.5">
                         <div className="flex gap-1">
                           <IconButton
                             variant="ghost"
@@ -493,14 +551,14 @@ export function AdminVehiclesPage() {
                       </td>
                     </tr>
                     {editingId === v.id ? (
-                      <tr className="bg-primary-950/20">
+                      <tr className="border-b border-slate-100 bg-primary-50/90 dark:border-slate-800/60 dark:bg-primary-950/25">
                         <td colSpan={7} className="p-4">
                           <form
                             onSubmit={handleUpdate}
                             className="space-y-4"
                           >
-                            <p className="text-xs font-medium text-primary-300">
-                              Edit vehicle {v.name}
+                            <p className="text-xs font-medium text-slate-700 dark:text-primary-300">
+                              Edit vehicle {v.plate_number ?? `#${v.id}`}
                             </p>
                             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                               <Input

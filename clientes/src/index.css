@@ -3,6 +3,41 @@
 @tailwind utilities;
 
 @layer utilities {
+  @keyframes admin-metric-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .admin-metric-tile {
+    animation: admin-metric-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .admin-hero-shimmer {
+    background: linear-gradient(
+      110deg,
+      transparent 0%,
+      rgb(255 255 255 / 0.06) 45%,
+      rgb(255 255 255 / 0.12) 50%,
+      rgb(255 255 255 / 0.06) 55%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: admin-shimmer 4.5s ease-in-out infinite;
+  }
+  @keyframes admin-shimmer {
+    0%,
+    100% {
+      background-position: 100% 0;
+    }
+    50% {
+      background-position: -100% 0;
+    }
+  }
+
   /** Passenger / marketing: readable in light (no `dark` on html) and dark mode */
   .text-p-heading {
     @apply text-apptext dark:text-white;

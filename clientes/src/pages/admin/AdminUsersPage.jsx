@@ -1,6 +1,7 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { adminUsersService } from "@/services/adminUsers.service.js";
 import { rolesService } from "@/services/roles.service.js";
+import { PasswordFieldWithToggle } from "@/components/auth/PasswordFieldWithToggle.jsx";
 import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Input } from "@/ui/Input.jsx";
@@ -14,6 +15,16 @@ import {
   isValidEthiopianPhone,
   normalizeEthiopianPhone,
 } from "@/utils/ethiopianPhone.js";
+import { cn } from "@/utils/cn.js";
+
+const USER_SORT_KEYS = [
+  { key: "id", label: "Id" },
+  { key: "full_name", label: "Name" },
+  { key: "phone", label: "Phone" },
+  { key: "email", label: "Email" },
+  { key: "role_id", label: "Role" },
+  { key: "status", label: "Status" },
+];
 
 export function AdminUsersPage() {
   const [users, setUsers] = useState([]);
@@ -26,12 +37,18 @@ export function AdminUsersPage() {
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
   const [deleting, setDeleting] = useState(false);
 
+  const [registerOpen, setRegisterOpen] = useState(false);
   const [full_name, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [role_id, setRoleId] = useState("");
   const [status, setStatus] = useState("active");
+
+  const [tableSearch, setTableSearch] = useState("");
+  const [sortKey, setSortKey] = useState("full_name");
+  const [sortDir, setSortDir] = useState("asc");
 
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -51,8 +68,13 @@ export function AdminUsersPage() {
         adminUsersService.list(),
         rolesService.list(),
       ]);
-      const listU = Array.isArray(u) ? u : [];
-      const listR = Array.isArray(r) ? r : [];
+      const listU = Array.isArray(u) ? u : Array.isArray(u?.data) ? u.data : [];
+      const rawRoles = Array.isArray(r) ? r : Array.isArray(r?.data) ? r.data : [];
+      const listR = [...rawRoles].sort((a, b) =>
+        String(a?.name ?? "").localeCompare(String(b?.name ?? ""), undefined, {
+          sensitivity: "base",
+        })
+      );
       setUsers(listU);
       setRoles(listR);
       setRoleId((prev) => {
@@ -69,6 +91,64 @@ export function AdminUsersPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const roleNameById = useMemo(() => {
+    const m = new Map();
+    for (const r of roles) {
+      m.set(Number(r.id), String(r.name ?? "").trim());
+    }
+    return m;
+  }, [roles]);
+
+  const filteredSortedUsers = useMemo(() => {
+    let rows = [...users];
+    const q = tableSearch.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((u) => {
+        const rn = roleNameById.get(Number(u.role_id)) ?? "";
+        const hay = [
+          u.id,
+          u.full_name,
+          u.phone,
+          u.email,
+          u.role_id,
+          rn,
+          u.status,
+        ]
+          .filter((x) => x != null && x !== "")
+          .map((x) => String(x).toLowerCase());
+        return hay.some((s) => s.includes(q));
+      });
+    }
+    const dir = sortDir === "asc" ? 1 : -1;
+    const key = sortKey;
+    rows.sort((a, b) => {
+      let va;
+      let vb;
+      if (key === "id" || key === "role_id") {
+        va = Number(a[key]);
+        vb = Number(b[key]);
+        if (!Number.isFinite(va)) va = 0;
+        if (!Number.isFinite(vb)) vb = 0;
+      } else {
+        va = String(a[key] ?? "").toLowerCase();
+        vb = String(b[key] ?? "").toLowerCase();
+      }
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+    return rows;
+  }, [users, tableSearch, sortKey, sortDir, roleNameById]);
+
+  function handleColumnSort(columnKey) {
+    if (sortKey === columnKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(columnKey);
+      setSortDir("asc");
+    }
+  }
 
   function openEdit(u) {
     setEditingId(u.id);
@@ -153,12 +233,20 @@ export function AdminUsersPage() {
       setError("Name, phone, and password are required.");
       return;
     }
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Password and confirmation do not match.");
+      return;
+    }
     if (!isValidEthiopianPhone(ph)) {
       setError(ETHIOPIAN_PHONE_ERROR);
       return;
     }
     if (role_id === "") {
-      setError("Choose a role.");
+      setError("Choose a role from the list.");
       return;
     }
     setSubmitting(true);
@@ -176,6 +264,8 @@ export function AdminUsersPage() {
       setPhone("");
       setEmail("");
       setPassword("");
+      setConfirmPassword("");
+      setRegisterOpen(false);
       await refresh();
     } catch (e) {
       setError(
@@ -236,130 +326,285 @@ export function AdminUsersPage() {
 
   return (
     <div className="space-y-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-p-heading text-xl font-bold tracking-tight sm:text-2xl">
+            Users
+          </h1>
+          <p className="text-p-muted max-w-xl text-sm sm:text-[0.95rem]">
+            View and edit accounts. Use{" "}
+            <strong className="font-semibold text-p-heading">Add user</strong> to open the
+            registration form and assign{" "}
+            <strong className="font-semibold text-p-heading">any role</strong> from your
+            database.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant={registerOpen ? "secondary" : "primary"}
+          className="shrink-0"
+          onClick={() => {
+            setRegisterOpen((o) => !o);
+            setError("");
+          }}
+          aria-expanded={registerOpen}
+          aria-controls="admin-register-user-panel"
+        >
+          {registerOpen ? "Close registration" : "Add user"}
+        </Button>
+      </div>
+
       {notice ? (
-        <p className="rounded-lg border border-primary-800/50 bg-primary-950/40 px-3 py-2 text-sm text-primary-200">
+        <p
+          className="rounded-lg border border-emerald-200/90 bg-emerald-50/95 px-3 py-2 text-sm text-emerald-900 shadow-sm dark:border-primary-800/50 dark:bg-primary-950/40 dark:text-primary-200 dark:shadow-none"
+          role="status"
+        >
           {notice}
         </p>
       ) : null}
       {error ? (
-        <p className="text-sm text-red-400" role="alert">
+        <p
+          className="rounded-lg border border-red-200 bg-red-50/95 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-300"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
 
-      <Card
-        title="Register user"
-        subtitle="Assign any role from your database"
-      >
-        <form
-          onSubmit={handleCreate}
-          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+      {registerOpen ? (
+        <div id="admin-register-user-panel">
+        <Card
+          title="Register a new user"
+          subtitle="Choose a role from the list (loaded from /api/roles). The person will use phone + password to sign in."
         >
-          <Input
-            label="Full name"
-            name="full_name"
-            value={full_name}
-            onChange={(e) => setFullName(e.target.value)}
-            required
-          />
-          <Input
-            label="Phone"
-            name="phone"
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="0912345678"
-            required
-          />
-          <Input
-            label="Email (optional)"
-            name="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <Input
-            label="Temporary password"
-            name="password"
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={6}
-          />
-          <Select
-            label="Role"
-            name="role_id"
-            value={role_id}
-            onChange={(e) => setRoleId(e.target.value)}
-            required
-          >
-            <option value="">Select role…</option>
-            {roles.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Status"
-            name="status"
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-          >
-            <option value="active">active</option>
-            <option value="inactive">inactive</option>
-          </Select>
-          <div className="flex items-end sm:col-span-2 lg:col-span-1">
-            <Button type="submit" className="w-full sm:w-auto" disabled={submitting}>
-              {submitting ? "Creating…" : "Create user"}
-            </Button>
-          </div>
-        </form>
-      </Card>
+          <form onSubmit={handleCreate} className="space-y-6">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Input
+                label="Full name"
+                name="full_name"
+                autoComplete="name"
+                value={full_name}
+                onChange={(e) => setFullName(e.target.value)}
+                required
+              />
+              <Input
+                label="Phone (login)"
+                name="phone"
+                type="tel"
+                autoComplete="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="0912345678"
+                required
+              />
+              <Input
+                label="Email (optional)"
+                name="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@example.com"
+              />
+              <div className="sm:col-span-2 lg:col-span-1">
+                <Select
+                  label="Role (from database)"
+                  name="role_id"
+                  value={role_id}
+                  onChange={(e) => setRoleId(e.target.value)}
+                  required
+                >
+                  <option value="">Select a role…</option>
+                  {roles.map((r) => {
+                    const label = `${String(r.name ?? "role")} (id ${r.id})`;
+                    return (
+                      <option key={r.id} value={r.id} title={label}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </Select>
+              </div>
+              <Select
+                label="Account status"
+                name="status"
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+              >
+                <option value="active">Active — can sign in</option>
+                <option value="inactive">Inactive — blocked</option>
+              </Select>
+            </div>
 
-      <Card title="All users" subtitle="Password hashes are never loaded in the UI">
-        <div className="mb-3">
-          <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
-            Refresh
-          </Button>
+            <div className="grid gap-4 border-t border-primary-900/20 pt-4 dark:border-white/10 sm:grid-cols-2">
+              <PasswordFieldWithToggle
+                id="admin-new-user-password"
+                label="Temporary password"
+                name="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={8}
+                placeholder="Min. 8 characters"
+              />
+              <PasswordFieldWithToggle
+                id="admin-new-user-confirm"
+                label="Confirm password"
+                name="confirm_password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                minLength={8}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" variant="primary" disabled={submitting}>
+                {submitting ? "Creating…" : "Create user"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={submitting}
+                onClick={() => {
+                  setRegisterOpen(false);
+                  setError("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </Card>
         </div>
-        <div className="overflow-x-auto rounded-lg border border-primary-900/30">
+      ) : null}
+
+      <Card title="All users" subtitle="Password hashes are never loaded in the UI. Sort columns by clicking the table headers (▲/▼).">
+        <div className="mb-4 max-w-md border-b border-primary-200/90 pb-4 dark:border-primary-900/25">
+          <Input
+            label="Search"
+            type="search"
+            name="user_table_search"
+            value={tableSearch}
+            onChange={(e) => setTableSearch(e.target.value)}
+            placeholder="Id, name, phone, email, role, status…"
+            autoComplete="off"
+            className="w-full"
+          />
+        </div>
+        <p className="mb-2 text-xs text-slate-600 dark:text-slate-500">
+          Showing{" "}
+          <span className="font-semibold text-slate-800 dark:text-slate-300">
+            {filteredSortedUsers.length}
+          </span>{" "}
+          of{" "}
+          <span className="font-semibold text-slate-800 dark:text-slate-300">{users.length}</span>{" "}
+          users
+          {tableSearch.trim() ? " (filtered)" : ""}
+        </p>
+        <div className="overflow-x-auto rounded-lg border border-primary-200 bg-white shadow-sm dark:border-primary-900/40 dark:bg-slate-950/40 dark:shadow-none">
           <table className="w-full min-w-[720px] border-collapse text-left text-sm">
-            <thead className="sticky top-0 bg-slate-900/95 text-xs uppercase text-primary-400/90">
-              <tr className="border-b border-primary-900/40">
-                <th className="px-3 py-2 font-semibold">Id</th>
-                <th className="px-3 py-2 font-semibold">Name</th>
-                <th className="px-3 py-2 font-semibold">Phone</th>
-                <th className="px-3 py-2 font-semibold">Email</th>
-                <th className="px-3 py-2 font-semibold">Role id</th>
-                <th className="px-3 py-2 font-semibold">Status</th>
-                <th className="px-3 py-2 font-semibold">Actions</th>
+            <thead className="sticky top-0 z-[1] border-b border-primary-200 bg-slate-50/95 text-xs uppercase tracking-wide text-primary-900 shadow-sm backdrop-blur-sm dark:border-primary-900/40 dark:bg-slate-900/95 dark:text-primary-400/95 dark:shadow-none">
+              <tr>
+                {USER_SORT_KEYS.map(({ key, label }) => {
+                  const active = sortKey === key;
+                  return (
+                    <th key={key} scope="col" className="px-2 py-2.5 font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => handleColumnSort(key)}
+                        className={cn(
+                          "flex w-full min-w-0 items-center justify-between gap-1 rounded-md px-1.5 py-1 text-left transition-colors",
+                          "text-slate-700 hover:bg-primary-100/90 hover:text-primary-950",
+                          "dark:text-primary-300/95 dark:hover:bg-white/10 dark:hover:text-primary-50",
+                          active &&
+                            "bg-primary-100/80 font-semibold text-primary-950 dark:bg-white/10 dark:font-semibold dark:text-primary-100"
+                        )}
+                        aria-sort={
+                          active
+                            ? sortDir === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : "none"
+                        }
+                      >
+                        <span className="truncate">{label}</span>
+                        <span
+                          className="shrink-0 tabular-nums text-[0.65rem] text-slate-500 opacity-90 dark:text-primary-400/80"
+                          aria-hidden
+                        >
+                          {active ? (sortDir === "asc" ? "▲" : "▼") : "◇"}
+                        </span>
+                      </button>
+                    </th>
+                  );
+                })}
+                <th
+                  scope="col"
+                  className="px-3 py-2.5 font-semibold text-slate-700 dark:text-primary-400/95"
+                >
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/90">
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800/80">
               {users.length === 0 ? (
                 <tr>
                   <td
                     colSpan={7}
-                    className="px-3 py-8 text-center text-slate-500"
+                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
                   >
                     No users
                   </td>
                 </tr>
+              ) : filteredSortedUsers.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
+                  >
+                    No users match your search.{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-primary-700 underline decoration-primary-300 underline-offset-2 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+                      onClick={() => setTableSearch("")}
+                    >
+                      Clear search
+                    </button>
+                  </td>
+                </tr>
               ) : (
-                users.map((u) => (
+                filteredSortedUsers.map((u) => (
                   <Fragment key={u.id}>
-                    <tr className="bg-slate-950/30 hover:bg-slate-800/30">
-                      <td className="px-3 py-2 text-slate-300">{u.id}</td>
-                      <td className="px-3 py-2 text-slate-200">{u.full_name}</td>
-                      <td className="px-3 py-2 text-slate-300">{u.phone}</td>
-                      <td className="max-w-[140px] truncate px-3 py-2 text-slate-400">
+                    <tr className="border-b border-slate-100 bg-white transition-colors hover:bg-primary-50/70 dark:border-slate-800/60 dark:bg-slate-950/20 dark:hover:bg-slate-800/35">
+                      <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-slate-600 dark:text-slate-400">
+                        {u.id}
+                      </td>
+                      <td className="px-3 py-2.5 font-medium text-apptext dark:text-slate-100">
+                        {u.full_name}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-slate-700 dark:text-slate-300">
+                        {u.phone}
+                      </td>
+                      <td className="max-w-[140px] truncate px-3 py-2.5 text-slate-600 dark:text-slate-400">
                         {u.email ?? "—"}
                       </td>
-                      <td className="px-3 py-2 text-slate-300">{u.role_id}</td>
-                      <td className="px-3 py-2 text-slate-300">{u.status}</td>
+                      <td
+                        className="px-3 py-2.5 text-slate-700 dark:text-slate-300"
+                        title={roleNameById.get(Number(u.role_id)) || undefined}
+                      >
+                        {u.role_id}
+                        {roleNameById.get(Number(u.role_id)) ? (
+                          <span className="ml-1 text-[0.7rem] text-slate-500 dark:text-slate-500">
+                            ({roleNameById.get(Number(u.role_id))})
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-slate-700 dark:text-slate-300">
+                        {u.status}
+                      </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1">
                           <IconButton
@@ -380,13 +625,13 @@ export function AdminUsersPage() {
                       </td>
                     </tr>
                     {editingId === u.id ? (
-                      <tr className="bg-primary-950/20">
-                        <td colSpan={7} className="p-4">
+                      <tr className="bg-primary-50/90 dark:bg-primary-950/25">
+                        <td colSpan={7} className="border-t border-primary-200/80 p-4 dark:border-primary-900/40">
                           <form
                             onSubmit={handleUpdateUser}
                             className="space-y-4"
                           >
-                            <p className="text-xs font-medium text-primary-300">
+                            <p className="text-xs font-semibold text-primary-900 dark:text-primary-300">
                               Edit user #{u.id}
                             </p>
                             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

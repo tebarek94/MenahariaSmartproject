@@ -9,33 +9,24 @@ import { Select } from "@/ui/Select.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
+import { DeleteModal } from "@/components/DeleteModal.jsx";
 import { formatDate } from "@/utils/format.js";
+import { cn } from "@/utils/cn.js";
+
+const REPORT_SORT_KEYS = [
+  { key: "id", label: "Id" },
+  { key: "type", label: "Type" },
+  { key: "summary", label: "Summary" },
+  { key: "source", label: "Source" },
+  { key: "status", label: "Status" },
+  { key: "date_range", label: "Range" },
+  { key: "file_path", label: "File" },
+  { key: "created_at", label: "When" },
+];
 
 function normalizeList(x) {
   return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
 }
-
-const SORT_OPTIONS = [
-  { value: "id", label: "ID" },
-  { value: "type", label: "Type" },
-  { value: "summary", label: "Summary" },
-  { value: "source", label: "Source" },
-  { value: "status", label: "Status" },
-  { value: "date_range", label: "Range" },
-  { value: "file_path", label: "File" },
-  { value: "created_at", label: "When" },
-];
-
-const HEADER_SORT_KEYS = {
-  Id: "id",
-  Type: "type",
-  Summary: "summary",
-  Source: "source",
-  Status: "status",
-  Range: "date_range",
-  File: "file_path",
-  When: "created_at",
-};
 
 export function AdminReportsPage() {
   const [rows, setRows] = useState([]);
@@ -46,6 +37,8 @@ export function AdminReportsPage() {
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: "" });
+  const [deleting, setDeleting] = useState(false);
 
   const [filterStatus, setFilterStatus] = useState("");
   const [filterSource, setFilterSource] = useState("");
@@ -53,6 +46,7 @@ export function AdminReportsPage() {
   const [sortKey, setSortKey] = useState("created_at");
   const [sortDir, setSortDir] = useState("desc");
 
+  const [addReportOpen, setAddReportOpen] = useState(false);
   const [cType, setCType] = useState("");
   const [cRange, setCRange] = useState("");
   const [cPath, setCPath] = useState("");
@@ -72,11 +66,8 @@ export function AdminReportsPage() {
     setLoading(true);
     setError("");
     try {
-      const params = {};
-      if (filterStatus.trim()) params.status = filterStatus.trim();
-      if (filterSource.trim()) params.source = filterSource.trim();
       const [rep, u, rl] = await Promise.all([
-        reportsService.list(params),
+        reportsService.list({}),
         adminUsersService.list(),
         rolesService.list(),
       ]);
@@ -88,7 +79,7 @@ export function AdminReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterStatus, filterSource]);
+  }, []);
 
   useEffect(() => {
     refresh();
@@ -112,6 +103,14 @@ export function AdminReportsPage() {
 
   const filteredSortedRows = useMemo(() => {
     let list = [...rows];
+    const st = filterStatus.trim().toLowerCase();
+    const src = filterSource.trim().toLowerCase();
+    if (st) {
+      list = list.filter((r) => String(r?.status ?? "").toLowerCase() === st);
+    }
+    if (src) {
+      list = list.filter((r) => String(r?.source ?? "").toLowerCase() === src);
+    }
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter((r) => {
@@ -149,21 +148,16 @@ export function AdminReportsPage() {
       return 0;
     });
     return list;
-  }, [rows, search, sortKey, sortDir]);
+  }, [rows, search, filterStatus, filterSource, sortKey, sortDir]);
 
-  function handleHeaderSort(key) {
-    if (!key) return;
-    if (sortKey === key) {
+  function handleColumnSort(k) {
+    if (!k) return;
+    if (sortKey === k) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
       return;
     }
-    setSortKey(key);
+    setSortKey(k);
     setSortDir("asc");
-  }
-
-  function sortIndicator(key) {
-    if (sortKey !== key) return "↕";
-    return sortDir === "asc" ? "↑" : "↓";
   }
 
   function openEdit(x) {
@@ -211,6 +205,7 @@ export function AdminReportsPage() {
       setCRange("");
       setCPath("");
       setCSummary("");
+      setAddReportOpen(false);
       await refresh();
     } catch (e) {
       setError(e?.data?.message || e?.message || "Create failed");
@@ -245,18 +240,33 @@ export function AdminReportsPage() {
   }
 
   async function handleRemove(id) {
-    if (!window.confirm("Delete this report?")) return;
+    setDeleteModal({ isOpen: true, id, name: `Report #${id}` });
+  }
+
+  const confirmDelete = async () => {
+    const { id } = deleteModal;
     setError("");
     setNotice("");
+    setDeleting(true);
     if (editingId === id) closeEdit();
     try {
       await reportsService.remove(id);
-      setNotice("Deleted.");
+      setNotice("Report deleted.");
+      setDeleteModal({ isOpen: false, id: null, name: "" });
       await refresh();
-    } catch (e) {
-      setError(e?.message || "Delete failed");
+    } catch (err) {
+      setError(
+        err?.data?.message ||
+          err?.message ||
+          "Delete failed"
+      );
+    } finally {
+      setDeleting(false);
     }
-  }
+  };
+
+  const hasActiveFilters =
+    Boolean(search.trim()) || Boolean(filterStatus) || Boolean(filterSource);
 
   if (loading && !rows.length && !users.length) {
     return (
@@ -268,255 +278,275 @@ export function AdminReportsPage() {
 
   return (
     <div className="space-y-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-p-heading text-xl font-bold tracking-tight sm:text-2xl">
+            Reports
+          </h1>
+          <p className="text-p-muted max-w-xl text-sm sm:text-[0.95rem]">
+            Activity log and manual report rows. Use{" "}
+            <strong className="font-semibold text-p-heading">Add report</strong> to open the
+            form. Rows with source “auto” are created from registrations, admin actions, or
+            trips / tickets / cargo. Run DB migration 005 if inserts fail.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant={addReportOpen ? "secondary" : "primary"}
+          className="shrink-0"
+          onClick={() => {
+            setAddReportOpen((o) => !o);
+            setError("");
+          }}
+          aria-expanded={addReportOpen}
+          aria-controls="admin-add-report-panel"
+        >
+          {addReportOpen ? "Close form" : "Add report"}
+        </Button>
+      </div>
+
       {notice ? (
-        <p className="rounded-lg border border-primary-800/50 bg-primary-950/40 px-3 py-2 text-sm text-primary-200">
+        <p
+          className="rounded-lg border border-emerald-200/90 bg-emerald-50/95 px-3 py-2 text-sm text-emerald-900 shadow-sm dark:border-primary-800/50 dark:bg-primary-950/40 dark:text-primary-200 dark:shadow-none"
+          role="status"
+        >
           {notice}
         </p>
       ) : null}
       {error ? (
-        <p className="text-sm text-red-400" role="alert">
+        <p
+          className="rounded-lg border border-red-200 bg-red-50/95 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-300"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
 
-      <Card
-        title="Active registered users"
-        subtitle={`Accounts with status “active” (${activeUsers.length} of ${users.length} loaded). Same list as Users admin; shown here for reporting context.`}
-      >
-        <div className="overflow-x-auto rounded-lg border border-primary-900/30">
-          <table className="w-full min-w-[640px] border-collapse text-left text-sm">
-            <thead className="bg-slate-900/95 text-xs uppercase text-primary-400/90">
-              <tr className="border-b border-primary-900/40">
-                <th className="px-2 py-2">Id</th>
-                <th className="px-2 py-2">Name</th>
-                <th className="px-2 py-2">Phone</th>
-                <th className="px-2 py-2">Email</th>
-                <th className="px-2 py-2">Role</th>
-                <th className="px-2 py-2">Status</th>
-                <th className="px-2 py-2">Registered</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/90">
-              {activeUsers.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="px-3 py-8 text-center text-slate-500"
-                  >
-                    No active users in the loaded list
-                  </td>
-                </tr>
-              ) : (
-                activeUsers.map((u) => (
-                  <tr key={u.id} className="hover:bg-slate-800/30">
-                    <td className="px-2 py-2 font-mono text-xs text-slate-400">
-                      {u.id}
-                    </td>
-                    <td className="max-w-[160px] truncate px-2 py-2 text-slate-200">
-                      {u.full_name ?? "—"}
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-2 text-slate-400">
-                      {u.phone ?? "—"}
-                    </td>
-                    <td className="max-w-[180px] truncate px-2 py-2 text-slate-500">
-                      {u.email ?? "—"}
-                    </td>
-                    <td className="px-2 py-2 text-slate-400">
-                      {roleName(u.role_id)}
-                    </td>
-                    <td className="px-2 py-2 text-slate-300">{u.status ?? "—"}</td>
-                    <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">
-                      {formatDate(u.created_at)}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      {addReportOpen ? (
+        <div id="admin-add-report-panel">
+          <Card
+            title="Create manual report row"
+            subtitle="All fields are optional; empty rows still record manual source and active status."
+          >
+            <form
+              onSubmit={handleCreate}
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+            >
+              <Input
+                label="Type (optional)"
+                name="report_create_type"
+                value={cType}
+                onChange={(e) => setCType(e.target.value)}
+                placeholder="e.g. revenue"
+              />
+              <Input
+                label="Date range (optional)"
+                name="report_create_range"
+                value={cRange}
+                onChange={(e) => setCRange(e.target.value)}
+                placeholder="e.g. 2026-03"
+              />
+              <Input
+                label="File path (optional)"
+                name="report_create_path"
+                value={cPath}
+                onChange={(e) => setCPath(e.target.value)}
+              />
+              <Input
+                label="Summary (optional)"
+                name="report_create_summary"
+                value={cSummary}
+                onChange={(e) => setCSummary(e.target.value)}
+                className="sm:col-span-2 lg:col-span-3"
+                placeholder="Short description for this report row"
+              />
+              <div className="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-3">
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? "Creating…" : "Create report"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setAddReportOpen(false);
+                    setError("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </Card>
         </div>
-      </Card>
+      ) : null}
 
       <Card
-        title="Activity & report log"
-        subtitle="Rows with source “auto” are created when users register, admins create users, or trips / tickets / cargo are created. Run DB migration 005 if inserts fail."
+        title="All reports"
+        subtitle="Search and filter. Sort columns by clicking the table headers (▲/▼)."
       >
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-          <Input
-            label="Search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="ID, type, summary, source, status, file..."
-            className="min-w-[220px] sm:flex-1"
-          />
-          <Select
-            label="Status"
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="min-w-[140px]"
-          >
-            <option value="">All statuses</option>
-            <option value="active">Active</option>
-            <option value="archived">Archived</option>
-          </Select>
-          <Select
-            label="Source"
-            value={filterSource}
-            onChange={(e) => setFilterSource(e.target.value)}
-            className="min-w-[140px]"
-          >
-            <option value="">All sources</option>
-            <option value="manual">Manual</option>
-            <option value="auto">Auto (tasks)</option>
-          </Select>
-          <Select
-            label="Sort by"
-            value={sortKey}
-            onChange={(e) => setSortKey(e.target.value)}
-            className="min-w-[140px]"
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Order"
-            value={sortDir}
-            onChange={(e) => setSortDir(e.target.value)}
-            className="min-w-[120px]"
-          >
-            <option value="desc">Desc</option>
-            <option value="asc">Asc</option>
-          </Select>
-          <Button
-            variant="ghost"
-            className="!text-xs"
-            onClick={() => {
-              setSearch("");
-              setSortKey("created_at");
-              setSortDir("desc");
-            }}
-          >
-            Clear
-          </Button>
-          <Button variant="ghost" className="!text-xs" onClick={() => refresh()}>
-            Refresh
-          </Button>
+        <div className="mb-4 flex flex-col gap-4 border-b border-primary-200/90 pb-4 dark:border-primary-900/25 lg:flex-row lg:flex-wrap lg:items-end">
+          <div className="max-w-md min-w-[200px] flex-1">
+            <Input
+              label="Search"
+              type="search"
+              name="reports_table_search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="ID, type, summary, source, status, file…"
+              autoComplete="off"
+              className="w-full"
+            />
+          </div>
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2 sm:max-w-md">
+            <Select
+              label="Status"
+              name="reports_filter_status"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="w-full"
+            >
+              <option value="">All statuses</option>
+              <option value="active">Active</option>
+              <option value="archived">Archived</option>
+            </Select>
+            <Select
+              label="Source"
+              name="reports_filter_source"
+              value={filterSource}
+              onChange={(e) => setFilterSource(e.target.value)}
+              className="w-full"
+            >
+              <option value="">All sources</option>
+              <option value="manual">Manual</option>
+              <option value="auto">Auto (tasks)</option>
+            </Select>
+          </div>
         </div>
-        <p className="mb-2 text-xs text-slate-500">
-          Showing {filteredSortedRows.length} of {rows.length}
+        <p className="mb-2 text-xs text-slate-600 dark:text-slate-500">
+          Showing{" "}
+          <span className="font-semibold text-slate-800 dark:text-slate-300">
+            {filteredSortedRows.length}
+          </span>{" "}
+          of{" "}
+          <span className="font-semibold text-slate-800 dark:text-slate-300">
+            {rows.length}
+          </span>{" "}
+          reports
+          {hasActiveFilters ? " (filtered)" : ""}
         </p>
 
-        <div className="mt-2 border-t border-primary-900/25 pt-4">
-          <h3 className="mb-3 text-sm font-semibold text-slate-200">
-            Create manual report row
-          </h3>
-          <form
-            onSubmit={handleCreate}
-            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-          >
-            <Input
-              label="Type (optional)"
-              value={cType}
-              onChange={(e) => setCType(e.target.value)}
-              placeholder="e.g. revenue"
-            />
-            <Input
-              label="Date range (optional)"
-              value={cRange}
-              onChange={(e) => setCRange(e.target.value)}
-              placeholder="e.g. 2026-03"
-            />
-            <Input
-              label="File path (optional)"
-              value={cPath}
-              onChange={(e) => setCPath(e.target.value)}
-            />
-            <Input
-              label="Summary (optional)"
-              value={cSummary}
-              onChange={(e) => setCSummary(e.target.value)}
-              className="sm:col-span-2 lg:col-span-3"
-              placeholder="Short description for this report row"
-            />
-            <div className="flex items-end">
-              <Button type="submit" disabled={submitting}>
-                {submitting ? "Creating…" : "Create"}
-              </Button>
-            </div>
-          </form>
-        </div>
-
-        <div className="mt-6 overflow-x-auto rounded-lg border border-primary-900/30">
+        <div className="overflow-x-auto rounded-lg border border-primary-200 bg-white shadow-sm dark:border-primary-900/40 dark:bg-slate-950/40 dark:shadow-none">
           <table className="w-full min-w-[960px] border-collapse text-left text-sm">
-            <thead className="bg-slate-900/95 text-xs uppercase text-primary-400/90">
-              <tr className="border-b border-primary-900/40">
-                {["Id", "Type", "Summary", "Source", "Status", "Range", "File", "When"].map(
-                  (label) => {
-                    const key = HEADER_SORT_KEYS[label];
-                    return (
-                      <th key={label} className="px-2 py-2">
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1 hover:text-primary-300"
-                          onClick={() => handleHeaderSort(key)}
-                          title={`Sort by ${label}`}
+            <thead className="sticky top-0 z-[1] border-b border-primary-200 bg-slate-50/95 text-xs uppercase tracking-wide text-primary-900 shadow-sm backdrop-blur-sm dark:border-primary-900/40 dark:bg-slate-900/95 dark:text-primary-400/95 dark:shadow-none">
+              <tr>
+                {REPORT_SORT_KEYS.map(({ key, label }) => {
+                  const active = sortKey === key;
+                  return (
+                    <th key={key} scope="col" className="px-2 py-2.5 font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => handleColumnSort(key)}
+                        className={cn(
+                          "flex w-full min-w-0 items-center justify-between gap-1 rounded-md px-1.5 py-1 text-left transition-colors",
+                          "text-slate-700 hover:bg-primary-100/90 hover:text-primary-950",
+                          "dark:text-primary-300/95 dark:hover:bg-white/10 dark:hover:text-primary-50",
+                          active &&
+                            "bg-primary-100/80 font-semibold text-primary-950 dark:bg-white/10 dark:font-semibold dark:text-primary-100"
+                        )}
+                        aria-sort={
+                          active
+                            ? sortDir === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : "none"
+                        }
+                      >
+                        <span className="truncate">{label}</span>
+                        <span
+                          className="shrink-0 tabular-nums text-[0.65rem] text-slate-500 opacity-90 dark:text-primary-400/80"
+                          aria-hidden
                         >
-                          <span>{label}</span>
-                          <span className="w-3 text-center text-[10px]">
-                            {sortIndicator(key)}
-                          </span>
-                        </button>
-                      </th>
-                    );
-                  }
-                )}
-                <th className="px-2 py-2">Actions</th>
+                          {active ? (sortDir === "asc" ? "▲" : "▼") : "◇"}
+                        </span>
+                      </button>
+                    </th>
+                  );
+                })}
+                <th
+                  scope="col"
+                  className="px-3 py-2.5 font-semibold text-slate-700 dark:text-primary-400/95"
+                >
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/90">
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800/80">
               {rows.length === 0 ? (
                 <tr>
                   <td
                     colSpan={9}
-                    className="px-3 py-8 text-center text-slate-500"
+                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
                   >
-                    No reports match your filters
+                    No reports — use Add report above to create one.
                   </td>
                 </tr>
               ) : filteredSortedRows.length === 0 ? (
                 <tr>
                   <td
                     colSpan={9}
-                    className="px-3 py-8 text-center text-slate-500"
+                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
                   >
-                    No rows match your search
+                    No reports match your search or filters.{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-primary-700 underline decoration-primary-300 underline-offset-2 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+                      onClick={() => {
+                        setSearch("");
+                        setFilterStatus("");
+                        setFilterSource("");
+                      }}
+                    >
+                      Clear filters
+                    </button>
                   </td>
                 </tr>
               ) : (
                 filteredSortedRows.map((r) => (
                   <Fragment key={r.id}>
-                    <tr className="hover:bg-slate-800/30">
-                      <td className="px-2 py-2 font-mono text-xs">{r.id}</td>
-                      <td className="max-w-[120px] truncate px-2 py-2 text-slate-300">
+                    <tr
+                      className={cn(
+                        "border-b border-slate-100 bg-white transition-colors hover:bg-primary-50/70",
+                        "dark:border-slate-800/60 dark:bg-slate-950/20 dark:hover:bg-slate-800/35"
+                      )}
+                    >
+                      <td className="whitespace-nowrap px-2 py-2.5 font-mono text-xs tabular-nums text-slate-600 dark:text-slate-400">
+                        {r.id}
+                      </td>
+                      <td className="max-w-[120px] truncate px-2 py-2.5 text-slate-800 dark:text-slate-200">
                         {r.type ?? "—"}
                       </td>
-                      <td className="max-w-[220px] truncate px-2 py-2 text-slate-400" title={r.summary ?? ""}>
+                      <td
+                        className="max-w-[220px] truncate px-2 py-2.5 text-slate-700 dark:text-slate-300"
+                        title={r.summary ?? ""}
+                      >
                         {r.summary ?? "—"}
                       </td>
-                      <td className="px-2 py-2 text-slate-400">{r.source ?? "—"}</td>
-                      <td className="px-2 py-2 text-slate-300">{r.status ?? "—"}</td>
-                      <td className="max-w-[120px] truncate px-2 py-2 text-slate-500">
+                      <td className="px-2 py-2.5 text-slate-800 dark:text-slate-300">
+                        {r.source ?? "—"}
+                      </td>
+                      <td className="px-2 py-2.5 text-slate-800 dark:text-slate-300">
+                        {r.status ?? "—"}
+                      </td>
+                      <td className="max-w-[120px] truncate px-2 py-2.5 text-slate-600 dark:text-slate-400">
                         {r.date_range ?? "—"}
                       </td>
-                      <td className="max-w-[120px] truncate px-2 py-2 text-slate-500">
+                      <td className="max-w-[120px] truncate px-2 py-2.5 text-slate-600 dark:text-slate-400">
                         {r.file_path ?? "—"}
                       </td>
-                      <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">
+                      <td className="whitespace-nowrap px-2 py-2.5 text-xs text-slate-600 dark:text-slate-400">
                         {formatDate(r.created_at)}
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2.5">
                         <div className="flex gap-1">
                           <IconButton
                             variant="ghost"
@@ -536,12 +566,13 @@ export function AdminReportsPage() {
                       </td>
                     </tr>
                     {editingId === r.id ? (
-                      <tr className="bg-primary-950/20">
+                      <tr className="border-b border-slate-100 bg-primary-50/90 dark:border-slate-800/60 dark:bg-primary-950/25">
                         <td colSpan={9} className="p-4">
                           <form onSubmit={handleUpdate} className="space-y-3">
                             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                               <Input
                                 label="Type"
+                                name="report_edit_type"
                                 value={editForm.type}
                                 onChange={(e) =>
                                   setEditForm((f) => ({
@@ -552,6 +583,7 @@ export function AdminReportsPage() {
                               />
                               <Input
                                 label="Date range"
+                                name="report_edit_range"
                                 value={editForm.date_range}
                                 onChange={(e) =>
                                   setEditForm((f) => ({
@@ -562,6 +594,7 @@ export function AdminReportsPage() {
                               />
                               <Input
                                 label="File path"
+                                name="report_edit_path"
                                 value={editForm.file_path}
                                 onChange={(e) =>
                                   setEditForm((f) => ({
@@ -572,6 +605,7 @@ export function AdminReportsPage() {
                               />
                               <Select
                                 label="Source"
+                                name="report_edit_source"
                                 value={editForm.source}
                                 onChange={(e) =>
                                   setEditForm((f) => ({
@@ -585,6 +619,7 @@ export function AdminReportsPage() {
                               </Select>
                               <Select
                                 label="Status"
+                                name="report_edit_status"
                                 value={editForm.status}
                                 onChange={(e) =>
                                   setEditForm((f) => ({
@@ -598,6 +633,7 @@ export function AdminReportsPage() {
                               </Select>
                               <Input
                                 label="Summary"
+                                name="report_edit_summary"
                                 value={editForm.summary}
                                 onChange={(e) =>
                                   setEditForm((f) => ({
@@ -637,6 +673,97 @@ export function AdminReportsPage() {
           </table>
         </div>
       </Card>
+
+      <Card
+        title="Active registered users"
+        subtitle={`Accounts with status “active” (${activeUsers.length} of ${users.length} loaded). Same list as Users admin; shown here for reporting context.`}
+      >
+        <div className="overflow-x-auto rounded-lg border border-primary-200 bg-white shadow-sm dark:border-primary-900/40 dark:bg-slate-950/40 dark:shadow-none">
+          <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+            <thead className="border-b border-primary-200 bg-slate-50/95 text-xs uppercase tracking-wide text-primary-900 dark:border-primary-900/40 dark:bg-slate-900/95 dark:text-primary-400/95">
+              <tr>
+                <th scope="col" className="px-2 py-2.5 font-semibold">
+                  Id
+                </th>
+                <th scope="col" className="px-2 py-2.5 font-semibold">
+                  Name
+                </th>
+                <th scope="col" className="px-2 py-2.5 font-semibold">
+                  Phone
+                </th>
+                <th scope="col" className="px-2 py-2.5 font-semibold">
+                  Email
+                </th>
+                <th scope="col" className="px-2 py-2.5 font-semibold">
+                  Role
+                </th>
+                <th scope="col" className="px-2 py-2.5 font-semibold">
+                  Status
+                </th>
+                <th scope="col" className="px-2 py-2.5 font-semibold">
+                  Registered
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800/80">
+              {activeUsers.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
+                  >
+                    No active users in the loaded list
+                  </td>
+                </tr>
+              ) : (
+                activeUsers.map((u) => (
+                  <tr
+                    key={u.id}
+                    className={cn(
+                      "border-b border-slate-100 bg-white transition-colors hover:bg-primary-50/70",
+                      "dark:border-slate-800/60 dark:bg-slate-950/20 dark:hover:bg-slate-800/35"
+                    )}
+                  >
+                    <td className="whitespace-nowrap px-2 py-2.5 font-mono text-xs tabular-nums text-slate-600 dark:text-slate-400">
+                      {u.id}
+                    </td>
+                    <td className="max-w-[160px] truncate px-2 py-2.5 text-slate-800 dark:text-slate-200">
+                      {u.full_name ?? "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2.5 text-slate-600 dark:text-slate-400">
+                      {u.phone ?? "—"}
+                    </td>
+                    <td className="max-w-[180px] truncate px-2 py-2.5 text-slate-600 dark:text-slate-400">
+                      {u.email ?? "—"}
+                    </td>
+                    <td className="px-2 py-2.5 text-slate-700 dark:text-slate-300">
+                      {roleName(u.role_id)}
+                    </td>
+                    <td className="px-2 py-2.5 text-slate-800 dark:text-slate-300">
+                      {u.status ?? "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2.5 text-xs text-slate-600 dark:text-slate-400">
+                      {formatDate(u.created_at)}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <DeleteModal
+        isOpen={deleteModal.isOpen}
+        onClose={() =>
+          !deleting && setDeleteModal({ isOpen: false, id: null, name: "" })
+        }
+        onConfirm={confirmDelete}
+        title="Delete report"
+        message={`Are you sure you want to delete ${deleteModal.name}? This action cannot be undone.`}
+        itemName={deleteModal.name}
+        loading={deleting}
+      />
     </div>
   );
 }

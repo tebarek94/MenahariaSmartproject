@@ -15,6 +15,7 @@ import { IconButton } from "@/ui/IconButton.jsx";
 import { PencilIcon, CheckIcon, TrashIcon, XIcon, DownloadIcon } from "@/ui/icons.jsx";
 import { DeleteModal } from "@/components/DeleteModal.jsx";
 import { formatDate } from "@/utils/format.js";
+import { cn } from "@/utils/cn.js";
 
 const TICKET_STATUSES = [
   "reserved",
@@ -24,27 +25,18 @@ const TICKET_STATUSES = [
   "used",
 ];
 const PAYMENT_STATUSES = ["pending", "completed", "failed", "refunded"];
-const SORT_OPTIONS = [
-  { value: "id", label: "ID" },
-  { value: "passenger", label: "Passenger" },
-  { value: "route", label: "Route" },
-  { value: "trip_id", label: "Trip" },
-  { value: "seat_id", label: "Seat" },
-  { value: "status", label: "Status" },
-  { value: "payment_status", label: "Payment" },
-  { value: "issued_at", label: "Issued" },
-];
 
-const HEADER_SORT_KEYS = {
-  Id: "id",
-  Passenger: "passenger",
-  Route: "route",
-  Trip: "trip_id",
-  Seat: "seat_id",
-  Status: "status",
-  Pay: "payment_status",
-  Issued: "issued_at",
-};
+const TICKET_SORT_KEYS = [
+  { key: "id", label: "Id" },
+  { key: "passenger", label: "Passenger" },
+  { key: "route", label: "Route" },
+  { key: "trip_id", label: "Trip" },
+  { key: "seat_id", label: "Seat" },
+  { key: "ticket_code", label: "Code" },
+  { key: "status", label: "Status" },
+  { key: "payment_status", label: "Pay" },
+  { key: "issued_at", label: "Issued" },
+];
 
 function normalizeList(x) {
   return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
@@ -71,6 +63,7 @@ export function AdminTicketsPage() {
   const [sortKey, setSortKey] = useState("issued_at");
   const [sortDir, setSortDir] = useState("desc");
 
+  const [addTicketOpen, setAddTicketOpen] = useState(false);
   const [cUserId, setCUserId] = useState("");
   const [cTripId, setCTripId] = useState("");
   const [cSeatId, setCSeatId] = useState("");
@@ -204,6 +197,7 @@ export function AdminTicketsPage() {
       await ticketsService.create(body);
       setNotice("Ticket created with automatic code.");
       setCSeatId("");
+      setAddTicketOpen(false);
       await refreshCore();
       relationsView.run().catch(() => {});
     } catch (e) {
@@ -374,6 +368,9 @@ export function AdminTicketsPage() {
       } else if (sortKey === "route") {
         va = String(`${a?.origin ?? ""} ${a?.destination ?? ""}`).toLowerCase();
         vb = String(`${b?.origin ?? ""} ${b?.destination ?? ""}`).toLowerCase();
+      } else if (sortKey === "ticket_code") {
+        va = String(a?.ticket_code ?? "").toLowerCase();
+        vb = String(b?.ticket_code ?? "").toLowerCase();
       } else {
         va = a?.[sortKey];
         vb = b?.[sortKey];
@@ -398,7 +395,7 @@ export function AdminTicketsPage() {
     return rows;
   }, [tickets, search, filterStatus, filterPayment, sortKey, sortDir]);
 
-  function handleHeaderSort(key) {
+  function handleColumnSort(key) {
     if (!key) return;
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -406,11 +403,6 @@ export function AdminTicketsPage() {
     }
     setSortKey(key);
     setSortDir("asc");
-  }
-
-  function sortIndicator(key) {
-    if (sortKey !== key) return "↕";
-    return sortDir === "asc" ? "↑" : "↓";
   }
 
   if (loading && !tickets.length && !trips.length) {
@@ -423,278 +415,341 @@ export function AdminTicketsPage() {
 
   return (
     <div className="space-y-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-p-heading text-xl font-bold tracking-tight sm:text-2xl">
+            Tickets
+          </h1>
+          <p className="text-p-muted max-w-xl text-sm sm:text-[0.95rem]">
+            Issue and manage passenger tickets. Use{" "}
+            <strong className="font-semibold text-p-heading">Add ticket</strong> to open the
+            form. Passenger accounts only; pick a trip, then a seat on that vehicle.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant={addTicketOpen ? "secondary" : "primary"}
+          className="shrink-0"
+          onClick={() => {
+            setAddTicketOpen((o) => !o);
+            setError("");
+          }}
+          aria-expanded={addTicketOpen}
+          aria-controls="admin-add-ticket-panel"
+        >
+          {addTicketOpen ? "Close form" : "Add ticket"}
+        </Button>
+      </div>
+
       {notice ? (
-        <p className="rounded-lg border border-primary-800/50 bg-primary-950/40 px-3 py-2 text-sm text-primary-200">
+        <p
+          className="rounded-lg border border-emerald-200/90 bg-emerald-50/95 px-3 py-2 text-sm text-emerald-900 shadow-sm dark:border-primary-800/50 dark:bg-primary-950/40 dark:text-primary-200 dark:shadow-none"
+          role="status"
+        >
           {notice}
         </p>
       ) : null}
       {error ? (
-        <p className="text-sm text-red-400" role="alert">
+        <p
+          className="rounded-lg border border-red-200 bg-red-50/95 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-300"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
 
-      <Card
-        title="Create ticket"
-        subtitle="Passenger accounts only (admin/driver are excluded) · trip · seat on that vehicle"
-      >
-        <form
-          onSubmit={handleCreate}
-          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-        >
-          <Select
-            label="Passenger (user)"
-            value={cUserId}
-            onChange={(e) => setCUserId(e.target.value)}
-            required
+      {addTicketOpen ? (
+        <div id="admin-add-ticket-panel">
+          <Card
+            title="Create ticket"
+            subtitle="Passenger accounts only (admin/driver are excluded). Choose trip, then seat on that vehicle."
           >
-            <option value="">Select passenger…</option>
-            {passengers.map((u) => (
-              <option key={u.id} value={u.id}>
-                {(String(u?.full_name ?? "").trim() || "Unnamed user")} ·{" "}
-                {u.phone || "no phone"} (#{u.id})
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Trip"
-            value={cTripId}
-            onChange={(e) => {
-              setCTripId(e.target.value);
-              setCSeatId("");
-            }}
-            required
-          >
-            <option value="">Select trip…</option>
-            {trips.map((t) => (
-              <option key={t.id} value={t.id}>
-                #{t.id} · vehicle {t.vehicle_id} · {formatDate(t.departure_time)}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Seat"
-            value={cSeatId}
-            onChange={(e) => setCSeatId(e.target.value)}
-            required
-            disabled={!cTripId || !seatOptions.length}
-          >
-            <option value="">
-              {!cTripId
-                ? "Pick a trip first"
-                : seatOptions.length
-                  ? "Select seat…"
-                  : "No seats for vehicle"}
-            </option>
-            {seatOptions.map((s) => (
-              <option key={s.id} value={s.id}>
-                #{s.seat_number} (id {s.id})
-              </option>
-            ))}
-          </Select>
-                    <Select
-            label="Status"
-            value={cStatus}
-            onChange={(e) => setCStatus(e.target.value)}
-          >
-            {TICKET_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Payment status"
-            value={cPayment}
-            onChange={(e) => setCPayment(e.target.value)}
-          >
-            {PAYMENT_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </Select>
-          <div className="flex flex-col justify-end gap-1 sm:col-span-2 lg:col-span-1">
-            <Button type="submit" disabled={submitting || passengers.length === 0}>
-              {submitting ? "Creating…" : "Create ticket"}
-            </Button>
-            {!loading && passengers.length === 0 ? (
-              <p className="text-xs text-amber-400/90">
-                No passenger users found. Add users with a passenger role in Users.
-              </p>
-            ) : null}
-          </div>
-        </form>
-      </Card>
-
-      <Card title="All tickets">
-        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-          <Input
-            label="Search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="ID, passenger, route, trip, seat, code..."
-            className="min-w-[240px] sm:flex-1"
-          />
-          <Select
-            label="Status"
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="min-w-[140px]"
-          >
-            <option value="">All statuses</option>
-            {TICKET_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Payment"
-            value={filterPayment}
-            onChange={(e) => setFilterPayment(e.target.value)}
-            className="min-w-[140px]"
-          >
-            <option value="">All payments</option>
-            {PAYMENT_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Sort by"
-            value={sortKey}
-            onChange={(e) => setSortKey(e.target.value)}
-            className="min-w-[140px]"
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Order"
-            value={sortDir}
-            onChange={(e) => setSortDir(e.target.value)}
-            className="min-w-[120px]"
-          >
-            <option value="desc">Desc</option>
-            <option value="asc">Asc</option>
-          </Select>
-          <Button variant="ghost" className="!text-xs" onClick={() => refreshCore()}>
-            Refresh list
-          </Button>
-          <Button
-            variant="ghost"
-            className="!text-xs"
-            onClick={() => {
-              setSearch("");
-              setFilterStatus("");
-              setFilterPayment("");
-              setSortKey("issued_at");
-              setSortDir("desc");
-            }}
-          >
-            Clear
-          </Button>
+            <form
+              onSubmit={handleCreate}
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+            >
+              <Select
+                label="Passenger (user)"
+                name="ticket_passenger"
+                value={cUserId}
+                onChange={(e) => setCUserId(e.target.value)}
+                required
+              >
+                <option value="">Select passenger…</option>
+                {passengers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {(String(u?.full_name ?? "").trim() || "Unnamed user")} ·{" "}
+                    {u.phone || "no phone"} (#{u.id})
+                  </option>
+                ))}
+              </Select>
+              <Select
+                label="Trip"
+                name="ticket_trip"
+                value={cTripId}
+                onChange={(e) => {
+                  setCTripId(e.target.value);
+                  setCSeatId("");
+                }}
+                required
+              >
+                <option value="">Select trip…</option>
+                {trips.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    #{t.id} · vehicle {t.vehicle_id} · {formatDate(t.departure_time)}
+                  </option>
+                ))}
+              </Select>
+              <Select
+                label="Seat"
+                name="ticket_seat"
+                value={cSeatId}
+                onChange={(e) => setCSeatId(e.target.value)}
+                required
+                disabled={!cTripId || !seatOptions.length}
+              >
+                <option value="">
+                  {!cTripId
+                    ? "Pick a trip first"
+                    : seatOptions.length
+                      ? "Select seat…"
+                      : "No seats for vehicle"}
+                </option>
+                {seatOptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    #{s.seat_number} (id {s.id})
+                  </option>
+                ))}
+              </Select>
+              <Select
+                label="Status"
+                name="ticket_status"
+                value={cStatus}
+                onChange={(e) => setCStatus(e.target.value)}
+              >
+                {TICKET_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </Select>
+              <Select
+                label="Payment status"
+                name="ticket_payment"
+                value={cPayment}
+                onChange={(e) => setCPayment(e.target.value)}
+              >
+                {PAYMENT_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </Select>
+              <div className="flex flex-col justify-end gap-2 sm:col-span-2 lg:col-span-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="submit" disabled={submitting || passengers.length === 0}>
+                    {submitting ? "Creating…" : "Create ticket"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setAddTicketOpen(false);
+                      setError("");
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+                {!loading && passengers.length === 0 ? (
+                  <p className="text-xs text-amber-800 dark:text-amber-400/90">
+                    No passenger users found. Add users with a passenger role in Users.
+                  </p>
+                ) : null}
+              </div>
+            </form>
+          </Card>
         </div>
-        <p className="mb-2 text-xs text-slate-500">
-          Showing {filteredSorted.length} of {tickets.length}
+      ) : null}
+
+      <Card
+        title="All tickets"
+        subtitle="Search and filter. Sort columns by clicking the table headers (▲/▼)."
+      >
+        <div className="mb-4 flex flex-col gap-4 border-b border-primary-200/90 pb-4 dark:border-primary-900/25 lg:flex-row lg:flex-wrap lg:items-end">
+          <div className="max-w-md min-w-[200px] flex-1">
+            <Input
+              label="Search"
+              type="search"
+              name="tickets_table_search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Id, passenger, route, trip, seat, code…"
+              autoComplete="off"
+              className="w-full"
+            />
+          </div>
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2 sm:max-w-md">
+            <Select
+              label="Status"
+              name="tickets_filter_status"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="w-full"
+            >
+              <option value="">All statuses</option>
+              {TICKET_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </Select>
+            <Select
+              label="Payment"
+              name="tickets_filter_payment"
+              value={filterPayment}
+              onChange={(e) => setFilterPayment(e.target.value)}
+              className="w-full"
+            >
+              <option value="">All payments</option>
+              {PAYMENT_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+        <p className="mb-2 text-xs text-slate-600 dark:text-slate-500">
+          Showing{" "}
+          <span className="font-semibold text-slate-800 dark:text-slate-300">
+            {filteredSorted.length}
+          </span>{" "}
+          of{" "}
+          <span className="font-semibold text-slate-800 dark:text-slate-300">{tickets.length}</span>{" "}
+          tickets
+          {search.trim() || filterStatus || filterPayment ? " (filtered)" : ""}
         </p>
-        <div className="overflow-x-auto rounded-lg border border-primary-900/30">
+        <div className="overflow-x-auto rounded-lg border border-primary-200 bg-white shadow-sm dark:border-primary-900/40 dark:bg-slate-950/40 dark:shadow-none">
           <table className="w-full min-w-[900px] border-collapse text-left text-sm">
-            <thead className="sticky top-0 bg-slate-900/95 text-xs uppercase text-primary-400/90">
-              <tr className="border-b border-primary-900/40">
-                {["Id", "Passenger", "Route", "Trip", "Seat"].map((label) => {
-                  const key = HEADER_SORT_KEYS[label];
+            <thead className="sticky top-0 z-[1] border-b border-primary-200 bg-slate-50/95 text-xs uppercase tracking-wide text-primary-900 shadow-sm backdrop-blur-sm dark:border-primary-900/40 dark:bg-slate-900/95 dark:text-primary-400/95 dark:shadow-none">
+              <tr>
+                {TICKET_SORT_KEYS.map(({ key, label }) => {
+                  const active = sortKey === key;
                   return (
-                    <th key={label} className="px-2 py-2 font-semibold">
+                    <th key={key} scope="col" className="px-2 py-2.5 font-semibold">
                       <button
                         type="button"
-                        className="inline-flex items-center gap-1 hover:text-primary-300"
-                        onClick={() => handleHeaderSort(key)}
-                        title={`Sort by ${label}`}
+                        onClick={() => handleColumnSort(key)}
+                        className={cn(
+                          "flex w-full min-w-0 items-center justify-between gap-1 rounded-md px-1.5 py-1 text-left transition-colors",
+                          "text-slate-700 hover:bg-primary-100/90 hover:text-primary-950",
+                          "dark:text-primary-300/95 dark:hover:bg-white/10 dark:hover:text-primary-50",
+                          active &&
+                            "bg-primary-100/80 font-semibold text-primary-950 dark:bg-white/10 dark:font-semibold dark:text-primary-100"
+                        )}
+                        aria-sort={
+                          active
+                            ? sortDir === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : "none"
+                        }
                       >
-                        <span>{label}</span>
-                        <span className="w-3 text-center text-[10px]">
-                          {sortIndicator(key)}
+                        <span className="truncate">{label}</span>
+                        <span
+                          className="shrink-0 tabular-nums text-[0.65rem] text-slate-500 opacity-90 dark:text-primary-400/80"
+                          aria-hidden
+                        >
+                          {active ? (sortDir === "asc" ? "▲" : "▼") : "◇"}
                         </span>
                       </button>
                     </th>
                   );
                 })}
-                <th className="px-2 py-2 font-semibold">Code</th>
-                {["Status", "Pay", "Issued"].map((label) => {
-                  const key = HEADER_SORT_KEYS[label];
-                  return (
-                    <th key={label} className="px-2 py-2 font-semibold">
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 hover:text-primary-300"
-                        onClick={() => handleHeaderSort(key)}
-                        title={`Sort by ${label}`}
-                      >
-                        <span>{label}</span>
-                        <span className="w-3 text-center text-[10px]">
-                          {sortIndicator(key)}
-                        </span>
-                      </button>
-                    </th>
-                  );
-                })}
-                <th className="px-2 py-2 font-semibold">QR</th>
-                <th className="px-2 py-2 font-semibold">Actions</th>
+                <th
+                  scope="col"
+                  className="px-2 py-2.5 font-semibold text-slate-700 dark:text-primary-400/95"
+                >
+                  QR
+                </th>
+                <th
+                  scope="col"
+                  className="px-2 py-2.5 font-semibold text-slate-700 dark:text-primary-400/95"
+                >
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/90">
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800/80">
               {tickets.length === 0 ? (
                 <tr>
                   <td
                     colSpan={11}
-                    className="px-3 py-8 text-center text-slate-500"
+                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
                   >
-                    No tickets
+                    No tickets — use the Add ticket button above to create one.
                   </td>
                 </tr>
               ) : filteredSorted.length === 0 ? (
                 <tr>
                   <td
                     colSpan={11}
-                    className="px-3 py-8 text-center text-slate-500"
+                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
                   >
-                    No rows match your filters
+                    No tickets match your search or filters.{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-primary-700 underline decoration-primary-300 underline-offset-2 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+                      onClick={() => {
+                        setSearch("");
+                        setFilterStatus("");
+                        setFilterPayment("");
+                      }}
+                    >
+                      Clear filters
+                    </button>
                   </td>
                 </tr>
               ) : (
                 filteredSorted.map((t) => (
                   <Fragment key={t.id}>
-                    <tr className="bg-slate-950/30 hover:bg-slate-800/30">
-                      <td className="px-2 py-2 font-mono text-xs text-slate-400">
+                    <tr
+                      className={cn(
+                        "border-b border-slate-100 bg-white transition-colors hover:bg-primary-50/70",
+                        "dark:border-slate-800/60 dark:bg-slate-950/20 dark:hover:bg-slate-800/35"
+                      )}
+                    >
+                      <td className="whitespace-nowrap px-2 py-2.5 font-mono text-xs tabular-nums text-slate-600 dark:text-slate-400">
                         {t.id}
                       </td>
-                      <td className="max-w-[120px] truncate px-2 py-2 text-slate-200">
+                      <td className="max-w-[120px] truncate px-2 py-2.5 font-medium text-apptext dark:text-slate-100">
                         {t.passenger_name || "Unknown Passenger"}
                       </td>
-                      <td className="max-w-[140px] truncate px-2 py-2 text-slate-400">
+                      <td className="max-w-[140px] truncate px-2 py-2.5 text-slate-800 dark:text-slate-300">
                         {t.origin && t.destination
                           ? `${t.origin} ${t.destination}`
                           : "No route"}
                       </td>
-                      <td className="px-2 py-2 text-slate-400">{t.trip_id}</td>
-                      <td className="px-2 py-2 text-slate-400">Seat {t.seat_id}</td>
-                      <td className="max-w-[80px] truncate px-2 py-2 text-slate-500">
+                      <td className="px-2 py-2.5 tabular-nums text-slate-800 dark:text-slate-300">
+                        {t.trip_id}
+                      </td>
+                      <td className="px-2 py-2.5 text-slate-800 dark:text-slate-300">
+                        Seat {t.seat_id}
+                      </td>
+                      <td className="max-w-[80px] truncate px-2 py-2.5 text-slate-600 dark:text-slate-400">
                         {t.ticket_code || "Auto-generated"}
                       </td>
-                      <td className="px-2 py-2 text-slate-300 capitalize">{t.status}</td>
-                      <td className="px-2 py-2 text-slate-300 capitalize">
+                      <td className="px-2 py-2.5 capitalize text-slate-800 dark:text-slate-300">
+                        {t.status}
+                      </td>
+                      <td className="px-2 py-2.5 capitalize text-slate-800 dark:text-slate-300">
                         {t.payment_status}
                       </td>
-                      <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">
+                      <td className="whitespace-nowrap px-2 py-2.5 text-xs text-slate-600 dark:text-slate-400">
                         {formatDate(t.issued_at)}
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2.5">
                         {t.qr_data_url ? (
                           <div className="flex items-center gap-2">
                             <a
@@ -711,17 +766,23 @@ export function AdminTicketsPage() {
                               />
                             </a>
                             {t.qr_code_used && (
-                              <span className="text-xs text-red-400">Used</span>
+                              <span className="text-xs font-medium text-red-700 dark:text-red-400">
+                                Used
+                              </span>
                             )}
-                            {t.qr_code_expires_at && new Date(t.qr_code_expires_at) < new Date() && !t.qr_code_used && (
-                              <span className="text-xs text-yellow-400">Expired</span>
-                            )}
+                            {t.qr_code_expires_at &&
+                              new Date(t.qr_code_expires_at) < new Date() &&
+                              !t.qr_code_used && (
+                                <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                                  Expired
+                                </span>
+                              )}
                           </div>
                         ) : (
-                          <span className="text-xs text-slate-500">No QR</span>
+                          <span className="text-xs text-slate-600 dark:text-slate-500">No QR</span>
                         )}
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2.5">
                         <div className="flex gap-1">
                           <IconButton
                             variant="ghost"
@@ -749,13 +810,13 @@ export function AdminTicketsPage() {
                       </td>
                     </tr>
                     {editingId === t.id ? (
-                      <tr className="bg-primary-950/20">
+                      <tr className="border-b border-slate-100 bg-primary-50/90 dark:border-slate-800/60 dark:bg-primary-950/25">
                         <td colSpan={11} className="p-4">
                           <form
                             onSubmit={handleUpdate}
                             className="space-y-4"
                           >
-                            <p className="text-xs font-medium text-primary-300">
+                            <p className="text-xs font-medium text-slate-700 dark:text-primary-300">
                               Edit ticket {t.id}
                             </p>
                             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -894,23 +955,29 @@ export function AdminTicketsPage() {
           </table>
         </div>
       </Card>
-        {relationsView.loading && !relationsView.data ? (
-          <div className="flex justify-center py-12">
-            <Spinner />
-          </div>
-        ) : relationsView.error ? (
-          <p className="text-sm text-red-400">{relationsView.error.message}</p>
-        ) : (
-          <>
-            <p className="mb-3 text-xs text-slate-500">
-              limit {relationsView.data?.limit ?? "—"}
-            </p>
-            <DataTable
-              rows={relationsView.data?.rows}
-              emptyMessage="No rows"
-            />
-          </>
-        )}
+
+      {relationsView.loading && !relationsView.data ? (
+        <div className="flex justify-center py-12">
+          <Spinner />
+        </div>
+      ) : relationsView.error ? (
+        <p
+          className="rounded-lg border border-red-200 bg-red-50/95 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-300"
+          role="alert"
+        >
+          {relationsView.error.message}
+        </p>
+      ) : (
+        <Card
+          title="Ticket relations (view)"
+          subtitle="Read-only join preview from the database (limit shown below)."
+        >
+          <p className="mb-3 text-xs text-slate-600 dark:text-slate-500">
+            limit {relationsView.data?.limit ?? "—"}
+          </p>
+          <DataTable rows={relationsView.data?.rows} emptyMessage="No rows" />
+        </Card>
+      )}
 
       {/* Delete Confirmation Modal */}
       <DeleteModal
