@@ -127,8 +127,7 @@ export function AdminLiveGpsPage() {
       <div>
         <h1 className="text-xl font-bold text-white sm:text-2xl">Live driver GPS</h1>
         <p className="mt-1 max-w-3xl text-sm text-primary-400/85 sm:text-base">
-          Positions update in real time over Socket.IO when drivers turn on sharing. Map tiles
-          are from{" "}
+          Positions update in real time when drivers turn on sharing.
           <a
             className="text-emerald-400 underline decoration-emerald-600/50 underline-offset-2 hover:text-emerald-300"
             href="https://www.openstreetmap.org/"

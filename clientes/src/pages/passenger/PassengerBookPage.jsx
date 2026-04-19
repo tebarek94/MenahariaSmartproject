@@ -13,6 +13,28 @@ function normalizeList(x) {
   return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
 }
 
+/** Same rule as the API: only `cancelled` frees the trip for another booking. */
+function tripIdsWithActiveTickets(ticketRows) {
+  const ids = new Set();
+  for (const tk of ticketRows) {
+    const st = String(tk?.status ?? "")
+      .toLowerCase()
+      .trim();
+    if (st === "cancelled") continue;
+    const tripId = Number(tk?.trip_id);
+    if (Number.isFinite(tripId)) ids.add(tripId);
+  }
+  return ids;
+}
+
+function formatTripOptionLabel(t) {
+  const route = `${t.origin ?? "—"} → ${t.destination ?? "—"}`;
+  const when = formatDate(t.departure_time);
+  const price = formatMoney(t.price);
+  const plate = t.plate_number ? String(t.plate_number) : "—";
+  return `${route} · ${when} · ${price} · ${plate} · #${t.id}`;
+}
+
 function isTripOpenForBooking(trip) {
   const status = String(trip?.status ?? "").toLowerCase();
   const allowedStatus =
@@ -44,7 +66,13 @@ export function PassengerBookPage() {
     setLoading(true);
     setError("");
     try {
-      const raw = await tripsService.list();
+      const [raw, rawTickets] = await Promise.all([
+        tripsService.list(),
+        ticketsService.list().catch(() => null),
+      ]);
+      const ticketRows = rawTickets != null ? normalizeList(rawTickets) : [];
+      const alreadyBookedTripIds = tripIdsWithActiveTickets(ticketRows);
+
       const tripRows = normalizeList(raw).filter(isTripOpenForBooking);
       const withSeats = await Promise.all(
         tripRows.map(async (trip) => {
@@ -61,10 +89,14 @@ export function PassengerBookPage() {
           }
         })
       );
-      const filtered = withSeats.filter(Boolean);
+      const filtered = withSeats
+        .filter(Boolean)
+        .filter((t) => !alreadyBookedTripIds.has(Number(t.id)));
       setTrips(filtered);
       setPickTrip((prev) =>
-        prev && filtered.some((t) => String(t.id) === String(prev.id)) ? prev : null
+        prev && filtered.some((t) => String(t.id) === String(prev.id))
+          ? prev
+          : null
       );
     } catch (e) {
       setError(e?.data?.message || e?.message || "Failed to load trips");
@@ -111,6 +143,16 @@ export function PassengerBookPage() {
     setBookingId(null);
   };
 
+  const onTripSelectChange = (e) => {
+    const id = e.target.value;
+    if (!id) {
+      closePicker();
+      return;
+    }
+    const trip = trips.find((t) => String(t.id) === id);
+    if (trip) void openSeatPicker(trip);
+  };
+
   async function bookSeat(seat) {
     if (!pickTrip) return;
     setNotice("");
@@ -148,8 +190,18 @@ export function PassengerBookPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-p-muted text-sm">
-            Choose a scheduled trip, then pick a free seat. You can only hold
-            one active ticket per trip.
+            Pick a trip below, then choose a free seat.{" "}
+            <span className="text-p-body">
+              You can only have one active ticket per trip. Trips you already
+              booked are hidden here — open{" "}
+              <Link
+                to={ROUTES.PASSENGER_TICKETS}
+                className="font-medium text-primary-600 underline hover:no-underline dark:text-primary-400"
+              >
+                My tickets
+              </Link>{" "}
+              and cancel if you need to rebook.
+            </span>
           </p>
         </div>
         <Button
@@ -183,38 +235,40 @@ export function PassengerBookPage() {
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="Available trips" className="min-w-0">
+        <Card title="Choose a trip" className="min-w-0">
           {trips.length === 0 ? (
-            <p className="text-sm text-slate-500">No trips open for booking.</p>
+            <p className="text-sm text-slate-500">
+              No trips are available to book right now (or you already have a
+              ticket for every open trip with free seats).
+            </p>
           ) : (
-            <ul className="divide-y divide-white/5">
-              {trips.map((t) => (
-                <li
-                  key={t.id}
-                  className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0">
-                    <p className="text-p-heading font-medium">
-                      {t.origin ?? "—"} → {t.destination ?? "—"}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {formatDate(t.departure_time)} · {t.plate_number ?? "—"} ·{" "}
-                      {formatMoney(t.price)}
-                    </p>
-                    <p className="text-[10px] uppercase text-slate-600">
-                      Trip #{t.id} · {t.status}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    className="w-full shrink-0 sm:w-auto"
-                    onClick={() => openSeatPicker(t)}
-                  >
-                    Choose seat
-                  </Button>
-                </li>
-              ))}
-            </ul>
+            <div className="space-y-2">
+              <label
+                htmlFor="passenger-book-trip"
+                className="block text-sm font-medium text-slate-200"
+              >
+                Trip (route, date, price)
+              </label>
+              <select
+                id="passenger-book-trip"
+                className="w-full rounded-lg border border-white/10 bg-slate-950/50 px-3 py-2.5 text-sm text-slate-100 shadow-inner focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                value={pickTrip ? String(pickTrip.id) : ""}
+                onChange={onTripSelectChange}
+              >
+                <option value="">
+                  — Select a trip to load seats —
+                </option>
+                {trips.map((t) => (
+                  <option key={t.id} value={String(t.id)}>
+                    {formatTripOptionLabel(t)}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500">
+                After you reserve a seat, this trip disappears from the list
+                until you cancel that ticket.
+              </p>
+            </div>
           )}
         </Card>
 
@@ -223,13 +277,13 @@ export function PassengerBookPage() {
           subtitle={
             pickTrip
               ? `${pickTrip.origin} → ${pickTrip.destination}`
-              : "Click “Choose seat” on a trip to see free seats."
+              : "Choose a trip from the list on the left to see free seats."
           }
           className="min-w-0"
         >
           {!pickTrip ? (
             <p className="text-sm text-slate-500">
-              Trip list is on the left (above on small screens).
+              Use the trip menu on the left (above on small screens).
             </p>
           ) : seatsLoading ? (
             <div className="flex justify-center py-12">

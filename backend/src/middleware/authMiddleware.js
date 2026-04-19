@@ -21,7 +21,12 @@ export const verifyToken = (req, res, next) => {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    req.user = result.payload;
+    const p = result.payload;
+    const idRaw = p?.id ?? p?.sub;
+    const n =
+      idRaw == null || idRaw === "" ? NaN : Number(idRaw);
+    const id = Number.isFinite(n) ? n : null;
+    req.user = id != null ? { ...p, id } : p;
     next();
   } catch (e) {
     console.error("verifyToken:", e);

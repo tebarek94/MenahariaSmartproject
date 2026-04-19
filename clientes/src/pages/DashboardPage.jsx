@@ -15,7 +15,13 @@ import { cn } from "@/utils/cn.js";
 const DASHBOARD_POLL_MS = 20_000;
 const MAX_LIVE_SAMPLES = 20;
 
-export function DashboardView({ load, title, errorTitle, errorMessage }) {
+export function DashboardView({
+  load,
+  title,
+  errorTitle,
+  errorMessage,
+  statusMixOnly = false,
+}) {
   const dashboardView = useAsync(load);
   const [overviewHistory, setOverviewHistory] = useState([]);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -49,6 +55,7 @@ export function DashboardView({ load, title, errorTitle, errorMessage }) {
   const breakdowns = summary?.breakdowns;
 
   useEffect(() => {
+    if (statusMixOnly) return;
     const counts = summary?.counts;
     if (!counts || typeof counts !== "object") return;
 
@@ -66,7 +73,7 @@ export function DashboardView({ load, title, errorTitle, errorMessage }) {
         },
       ].slice(-MAX_LIVE_SAMPLES)
     );
-  }, [summary?.counts]);
+  }, [summary?.counts, statusMixOnly]);
 
   const trendKeys = useMemo(() => {
     if (!overviewHistory.length) return [];
@@ -146,8 +153,9 @@ export function DashboardView({ load, title, errorTitle, errorMessage }) {
               {title}
             </h2>
             <p className="text-p-muted mt-1 max-w-xl text-sm sm:text-[0.95rem]">
-              Live metrics, status mix, and revenue — refreshed on a short interval so you see
-              movement as the system updates.
+              {statusMixOnly
+                ? "Status breakdowns across tickets, trips, cargo, and payments — refreshed on a short interval."
+                : "Live metrics, status mix, and revenue — refreshed on a short interval so you see movement as the system updates."}
             </p>
           </div>
           <div className="flex items-center gap-2 rounded-full border border-primary-200/80 bg-white/80 px-3 py-1.5 text-xs font-medium text-primary-800 shadow-sm dark:border-primary-700/50 dark:bg-slate-800/80 dark:text-primary-200">
@@ -163,7 +171,7 @@ export function DashboardView({ load, title, errorTitle, errorMessage }) {
         </div>
       </div>
 
-      {countEntries.length > 0 ? (
+      {!statusMixOnly && countEntries.length > 0 ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {countEntries.map(([key, val], i) => (
             <div
@@ -182,54 +190,56 @@ export function DashboardView({ load, title, errorTitle, errorMessage }) {
         </div>
       ) : null}
 
-      <Card
-        title={
-          <span className="inline-flex items-center gap-2">
-            <ChartTrendIcon className="h-5 w-5 text-primary-600 dark:text-primary-400" />
-            Live trend (top metrics)
-          </span>
-        }
-        subtitle={`Auto refresh every ${DASHBOARD_POLL_MS / 1000}s · tracks the three largest entity counts over time.`}
-      >
-        <div className="grid grid-cols-1 gap-3 pb-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-primary-200/70 bg-white/85 p-3.5 dark:border-white/10 dark:bg-slate-900/5">
-            <p className="text-p-subtle text-[0.65rem] font-bold uppercase tracking-[0.14em]">
-              Samples
-            </p>
-            <p className="text-p-heading mt-1 text-2xl font-bold tabular-nums">
-              {overviewHistory.length}
-            </p>
+      {!statusMixOnly ? (
+        <Card
+          title={
+            <span className="inline-flex items-center gap-2">
+              <ChartTrendIcon className="h-5 w-5 text-primary-600 dark:text-primary-400" />
+              Live trend (top metrics)
+            </span>
+          }
+          subtitle={`Auto refresh every ${DASHBOARD_POLL_MS / 1000}s · tracks the three largest entity counts over time.`}
+        >
+          <div className="grid grid-cols-1 gap-3 pb-4 sm:grid-cols-3">
+            <div className="rounded-xl border border-primary-200/70 bg-white/85 p-3.5 dark:border-white/10 dark:bg-slate-900/5">
+              <p className="text-p-subtle text-[0.65rem] font-bold uppercase tracking-[0.14em]">
+                Samples
+              </p>
+              <p className="text-p-heading mt-1 text-2xl font-bold tabular-nums">
+                {overviewHistory.length}
+              </p>
+            </div>
+            <div className="rounded-xl border border-primary-200/70 bg-white/85 p-3.5 dark:border-white/10 dark:bg-slate-900/5">
+              <p className="text-p-subtle text-[0.65rem] font-bold uppercase tracking-[0.14em]">
+                Last updated
+              </p>
+              <p className="text-p-body mt-1 text-sm font-semibold tabular-nums">
+                {lastUpdated
+                  ? lastUpdated.toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      second: "2-digit",
+                    })
+                  : "Waiting..."}
+              </p>
+            </div>
+            <div className="rounded-xl border border-primary-200/70 bg-white/85 p-3.5 dark:border-white/10 dark:bg-slate-900/5">
+              <p className="text-p-subtle text-[0.65rem] font-bold uppercase tracking-[0.14em]">
+                Revenue (completed)
+              </p>
+              <p className="text-p-heading mt-1 text-base font-bold sm:text-lg">
+                {summary?.revenue_completed_total != null
+                  ? formatMoney(summary.revenue_completed_total)
+                  : "—"}
+              </p>
+            </div>
           </div>
-          <div className="rounded-xl border border-primary-200/70 bg-white/85 p-3.5 dark:border-white/10 dark:bg-slate-900/5">
-            <p className="text-p-subtle text-[0.65rem] font-bold uppercase tracking-[0.14em]">
-              Last updated
-            </p>
-            <p className="text-p-body mt-1 text-sm font-semibold tabular-nums">
-              {lastUpdated
-                ? lastUpdated.toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                  })
-                : "Waiting..."}
-            </p>
-          </div>
-          <div className="rounded-xl border border-primary-200/70 bg-white/85 p-3.5 dark:border-white/10 dark:bg-slate-900/5">
-            <p className="text-p-subtle text-[0.65rem] font-bold uppercase tracking-[0.14em]">
-              Revenue (completed)
-            </p>
-            <p className="text-p-heading mt-1 text-base font-bold sm:text-lg">
-              {summary?.revenue_completed_total != null
-                ? formatMoney(summary.revenue_completed_total)
-                : "—"}
-            </p>
-          </div>
-        </div>
-        <RealtimeLineChart series={trendSeries} />
-        {liveError ? (
-          <p className="mt-2 text-xs text-red-400">{liveError}</p>
-        ) : null}
-      </Card>
+          <RealtimeLineChart series={trendSeries} />
+          {liveError ? (
+            <p className="mt-2 text-xs text-red-400">{liveError}</p>
+          ) : null}
+        </Card>
+      ) : null}
 
       {breakdowns ? (
         <div className="space-y-3">
@@ -275,60 +285,64 @@ export function DashboardView({ load, title, errorTitle, errorMessage }) {
         </div>
       ) : null}
 
-      <div className="grid gap-4 grid-cols-1 xl:grid-cols-2">
-        <Card title="Users with roles" subtitle="Latest 40">
-          <DataTable rows={d?.users_with_roles} maxHeightClass="max-h-64" />
-        </Card>
+      {!statusMixOnly ? (
+        <>
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <Card title="Users with roles" subtitle="Latest 40">
+              <DataTable rows={d?.users_with_roles} maxHeightClass="max-h-64" />
+            </Card>
 
-        <Card title="Routes" subtitle="Latest 50">
-          <DataTable rows={d?.routes} maxHeightClass="max-h-64" />
-        </Card>
-      </div>
+            <Card title="Routes" subtitle="Latest 50">
+              <DataTable rows={d?.routes} maxHeightClass="max-h-64" />
+            </Card>
+          </div>
 
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
-        <Card title="Roles & permission counts">
-          <DataTable
-            rows={d?.roles_with_permission_counts}
-            maxHeightClass="max-h-64"
-          />
-        </Card>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card title="Roles & permission counts">
+              <DataTable
+                rows={d?.roles_with_permission_counts}
+                maxHeightClass="max-h-64"
+              />
+            </Card>
 
-        <Card title="Vehicles & seat counts" subtitle="Latest 30">
-          <DataTable rows={d?.vehicles_with_seat_counts} maxHeightClass="max-h-64" />
-        </Card>
-      </div>
+            <Card title="Vehicles & seat counts" subtitle="Latest 30">
+              <DataTable rows={d?.vehicles_with_seat_counts} maxHeightClass="max-h-64" />
+            </Card>
+          </div>
 
-      <div className="space-y-4">
-        <Card title="Trips (linked)" subtitle="Latest 25">
-          <DataTable rows={d?.trips_linked} maxHeightClass="max-h-64" />
-        </Card>
+          <div className="space-y-4">
+            <Card title="Trips (linked)" subtitle="Latest 25">
+              <DataTable rows={d?.trips_linked} maxHeightClass="max-h-64" />
+            </Card>
 
-        <Card title="Tickets (linked)" subtitle="Latest 25">
-          <DataTable rows={d?.tickets_linked} maxHeightClass="max-h-64" />
-        </Card>
+            <Card title="Tickets (linked)" subtitle="Latest 25">
+              <DataTable rows={d?.tickets_linked} maxHeightClass="max-h-64" />
+            </Card>
 
-        <Card title="Cargo (linked)" subtitle="Latest 25">
-          <DataTable rows={d?.cargo_linked} maxHeightClass="max-h-64" />
-        </Card>
+            <Card title="Cargo (linked)" subtitle="Latest 25">
+              <DataTable rows={d?.cargo_linked} maxHeightClass="max-h-64" />
+            </Card>
 
-        <Card title="Payments (linked)" subtitle="Latest 25">
-          <DataTable rows={d?.payments_linked} maxHeightClass="max-h-64" />
-        </Card>
-      </div>
+            <Card title="Payments (linked)" subtitle="Latest 25">
+              <DataTable rows={d?.payments_linked} maxHeightClass="max-h-64" />
+            </Card>
+          </div>
 
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
-        <Card title="Recent notifications" subtitle="Latest 15">
-          <DataTable rows={d?.notifications_recent} maxHeightClass="max-h-64" />
-        </Card>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card title="Recent notifications" subtitle="Latest 15">
+              <DataTable rows={d?.notifications_recent} maxHeightClass="max-h-64" />
+            </Card>
 
-        <Card title="Recent reports" subtitle="Latest 10">
-          <DataTable rows={d?.reports_recent} maxHeightClass="max-h-48" />
-        </Card>
-      </div>
+            <Card title="Recent reports" subtitle="Latest 10">
+              <DataTable rows={d?.reports_recent} maxHeightClass="max-h-48" />
+            </Card>
+          </div>
 
-      <Card title="Recent login history" subtitle="Latest 20">
-        <DataTable rows={d?.login_history_recent} maxHeightClass="max-h-64" />
-      </Card>
+          <Card title="Recent login history" subtitle="Latest 20">
+            <DataTable rows={d?.login_history_recent} maxHeightClass="max-h-64" />
+          </Card>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -340,6 +354,7 @@ export function DashboardPage() {
       title="Operations overview"
       errorTitle="Could not load admin view"
       errorMessage="Request failed - check token and admin role."
+      statusMixOnly
     />
   );
 }

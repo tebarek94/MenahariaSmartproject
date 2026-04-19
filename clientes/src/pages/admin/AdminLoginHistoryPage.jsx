@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { loginHistoryService } from "@/services/loginHistory.service.js";
 import { adminUsersService } from "@/services/adminUsers.service.js";
 import { Card } from "@/ui/Card.jsx";
@@ -11,25 +12,61 @@ import { PencilIcon, CheckIcon, TrashIcon, XIcon } from "@/ui/icons.jsx";
 import { formatDate } from "@/utils/format.js";
 import { cn } from "@/utils/cn.js";
 import { DeleteModal } from "@/components/DeleteModal.jsx";
+import { ROUTES } from "@/utils/constants.js";
+import { isAuditLoginHistoryRow, parseAuditLine } from "@/utils/loginHistoryRow.js";
+
+function isAuditRow(row) {
+  return isAuditLoginHistoryRow(row);
+}
+
+function AuditActivityBadge({ activity }) {
+  const a = String(activity || "—");
+  const map = {
+    Create:
+      "bg-emerald-100 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200",
+    Update: "bg-sky-100 text-sky-900 dark:bg-sky-950/50 dark:text-sky-200",
+    Delete: "bg-rose-100 text-rose-900 dark:bg-rose-950/50 dark:text-rose-200",
+    Write: "bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200",
+  };
+  const cls =
+    map[a] || "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200";
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-full px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide",
+        cls
+      )}
+    >
+      {a}
+    </span>
+  );
+}
 
 export function AdminLoginHistoryPage() {
+  const { pathname } = useLocation();
+  const pathNorm = (pathname || "").replace(/\/+$/, "") || "/";
+  const auditOnly =
+    pathNorm === ROUTES.ADMIN_AUDIT_LOG || pathNorm.endsWith("/admin/audit-log");
+
   const [rows, setRows] = useState([]);
   const [filteredRows, setFilteredRows] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState("");
   const [filterUser, setFilterUser] = useState("");
   const [filterDateRange, setFilterDateRange] = useState("all");
+  /** all | login | admin — login = sign-in UA rows; admin = AUDIT API rows */
+  const [filterEvent, setFilterEvent] = useState(() => (auditOnly ? "admin" : "all"));
 
-  const [cUser, setCUser] = useState("");
-  const [cDevice, setCDevice] = useState("");
-  const [cIp, setCIp] = useState("");
+  useEffect(() => {
+    setFilterEvent(auditOnly ? "admin" : "all");
+  }, [auditOnly]);
 
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -55,15 +92,18 @@ export function AdminLoginHistoryPage() {
 
     // User filter
     if (filterUser) {
-      filtered = filtered.filter(row => row.user_id == filterUser);
+      const uid = Number(filterUser);
+      filtered = filtered.filter(
+        (row) => row.user_id != null && Number(row.user_id) === uid
+      );
     }
 
     // Date range filter
     if (filterDateRange !== "all") {
       const now = new Date();
       const filterDate = new Date();
-      
-      switch(filterDateRange) {
+
+      switch (filterDateRange) {
         case "today":
           filterDate.setHours(0, 0, 0, 0);
           break;
@@ -78,15 +118,22 @@ export function AdminLoginHistoryPage() {
       }
 
       if (filterDateRange !== "all") {
-        filtered = filtered.filter(row => {
+        filtered = filtered.filter((row) => {
           const loginDate = new Date(row.login_time);
+          if (Number.isNaN(loginDate.getTime())) return true;
           return loginDate >= filterDate;
         });
       }
     }
 
+    if (filterEvent === "login") {
+      filtered = filtered.filter((row) => !isAuditRow(row));
+    } else if (filterEvent === "admin") {
+      filtered = filtered.filter((row) => isAuditRow(row));
+    }
+
     setFilteredRows(filtered);
-  }, [rows, searchTerm, filterUser, filterDateRange]);
+  }, [rows, searchTerm, filterUser, filterDateRange, filterEvent]);
 
   const refresh = useCallback(async (options = {}) => {
     const silent = Boolean(options.silent);
@@ -95,13 +142,12 @@ export function AdminLoginHistoryPage() {
     }
     setError("");
     try {
-      const [h, u] = await Promise.all([
+      const [list, userList] = await Promise.all([
         loginHistoryService.list(),
         adminUsersService.list(),
       ]);
-      const list = Array.isArray(h) ? h : Array.isArray(h?.data) ? h.data : [];
       setRows(list);
-      setUsers(Array.isArray(u) ? u : Array.isArray(u?.data) ? u.data : []);
+      setUsers(userList);
     } catch (e) {
       if (!silent) {
         setError(e?.message || "Failed to load");
@@ -117,11 +163,13 @@ export function AdminLoginHistoryPage() {
     refresh();
   }, [refresh]);
 
-  /** Keep the table current while this page is open (no manual refresh needed). */
+  /** Poll so new rows appear without manual refresh. */
   useEffect(() => {
     const id = window.setInterval(() => {
-      refresh({ silent: true });
-    }, 60_000);
+      if (document.visibilityState === "visible") {
+        refresh({ silent: true });
+      }
+    }, 20_000);
 
     const onVisible = () => {
       if (document.visibilityState === "visible") refresh({ silent: true });
@@ -149,29 +197,6 @@ export function AdminLoginHistoryPage() {
     setEditForm({ user_id: "", device_info: "", ip_address: "" });
   }
 
-  async function handleCreate(e) {
-    e.preventDefault();
-    setNotice("");
-    setError("");
-    setSubmitting(true);
-    try {
-      const body = {};
-      if (cUser) body.user_id = Number(cUser);
-      if (cDevice.trim()) body.device_info = cDevice.trim();
-      if (cIp.trim()) body.ip_address = cIp.trim();
-      await loginHistoryService.create(body);
-      setNotice("Login history record created successfully.");
-      setCUser("");
-      setCDevice("");
-      setCIp("");
-      await refresh();
-    } catch (e) {
-      setError(e?.data?.message || e?.message || "Create failed");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   async function handleUpdate(e) {
     e.preventDefault();
     if (editingId == null) return;
@@ -184,7 +209,7 @@ export function AdminLoginHistoryPage() {
         device_info: editForm.device_info.trim() || null,
         ip_address: editForm.ip_address.trim() || null,
       });
-      setNotice("Login history record updated successfully.");
+      setNotice("Record updated.");
       closeEdit();
       await refresh();
     } catch (e) {
@@ -203,13 +228,16 @@ export function AdminLoginHistoryPage() {
     setError("");
     setNotice("");
     if (editingId === id) closeEdit();
+    setDeleting(true);
     try {
       await loginHistoryService.remove(id);
-      setNotice("Login history record deleted successfully.");
+      setNotice("Record deleted.");
       setDeleteModal({ isOpen: false, id: null });
       await refresh();
     } catch (e) {
       setError(e?.message || "Delete failed");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -226,15 +254,42 @@ export function AdminLoginHistoryPage() {
     );
   }
 
+  const colSpan = 7;
+
   return (
     <div className="space-y-8">
       <div className="space-y-1">
         <h1 className="text-p-heading text-xl font-bold tracking-tight sm:text-2xl">
-          Login history
+          {auditOnly ? "Audit log" : "Login & activity"}
         </h1>
-        <p className="text-p-muted max-w-xl text-sm sm:text-[0.95rem]">
-          Logins are recorded automatically when users sign in. This list refreshes on load, every
-          minute while you stay on this page, and when you return to the tab.
+        <p className="text-p-muted max-w-2xl text-sm sm:text-[0.95rem]">
+          {auditOnly ? (
+            <>
+              Successful <strong className="font-semibold text-p-heading">admin-only API writes</strong>{" "}
+              (POST, PUT, PATCH, DELETE) are logged with an{" "}
+              <strong className="font-semibold text-p-heading">AUDIT</strong> line.{" "}
+              <Link
+                className="font-medium text-primary-700 underline decoration-primary-300 underline-offset-2 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+                to={ROUTES.ADMIN_LOGIN_HISTORY}
+              >
+                Open login &amp; full activity
+              </Link>{" "}
+              to include sign-ins.
+            </>
+          ) : (
+            <>
+              Sign-ins are stored when anyone logs in. Successful{" "}
+              <strong className="font-semibold text-p-heading">admin API actions</strong> are appended
+              with an <strong className="font-semibold text-p-heading">AUDIT</strong> prefix.{" "}
+              <Link
+                className="font-medium text-primary-700 underline decoration-primary-300 underline-offset-2 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+                to={ROUTES.ADMIN_AUDIT_LOG}
+              >
+                Audit log only
+              </Link>
+              . Refreshes on load, every 20s while this tab is visible, and when you return here.
+            </>
+          )}
         </p>
       </div>
 
@@ -257,21 +312,43 @@ export function AdminLoginHistoryPage() {
 
       <Card
         title="Search & filter"
-        subtitle="Narrow the table by device, IP, user, or date range."
+        subtitle={
+          auditOnly
+            ? "Admin actions only. Filter by admin user, time, IP, or AUDIT path text."
+            : "Narrow by event type, user, time, device/UA, IP, or AUDIT action text."
+        }
       >
-        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-4",
+            auditOnly ? "md:grid-cols-2 lg:grid-cols-4" : "md:grid-cols-2 lg:grid-cols-5"
+          )}
+        >
+          {!auditOnly ? (
+            <Select
+              label="Event type"
+              value={filterEvent}
+              onChange={(e) => setFilterEvent(e.target.value)}
+            >
+              <option value="all">All events</option>
+              <option value="login">Sign-in only</option>
+              <option value="admin">Admin actions only</option>
+            </Select>
+          ) : null}
+
           <Input
-            placeholder="Search by device, IP, or user ID..."
+            label="Search"
+            placeholder="IP, user id, AUDIT path…"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
-          
-          <Select 
-            label="Filter by User" 
-            value={filterUser} 
+
+          <Select
+            label="Admin user"
+            value={filterUser}
             onChange={(e) => setFilterUser(e.target.value)}
           >
-            <option value="">All Users</option>
+            <option value="">All admins</option>
             {users.map((u) => (
               <option key={u.id} value={u.id}>
                 {u.full_name}
@@ -279,76 +356,59 @@ export function AdminLoginHistoryPage() {
             ))}
           </Select>
 
-          <Select 
-            label="Date Range" 
-            value={filterDateRange} 
+          <Select
+            label="Date range"
+            value={filterDateRange}
             onChange={(e) => setFilterDateRange(e.target.value)}
           >
-            <option value="all">All Time</option>
+            <option value="all">All time</option>
             <option value="today">Today</option>
-            <option value="week">Last 7 Days</option>
-            <option value="month">Last 30 Days</option>
+            <option value="week">Last 7 days</option>
+            <option value="month">Last 30 days</option>
           </Select>
 
           <div className="flex items-end">
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
+              type="button"
               onClick={() => {
                 setSearchTerm("");
                 setFilterUser("");
                 setFilterDateRange("all");
+                setFilterEvent(auditOnly ? "admin" : "all");
               }}
               className="w-full"
             >
-              Clear Filters
+              Clear filters
             </Button>
           </div>
         </div>
       </Card>
 
       <Card
-        title="Create login history record"
-        subtitle="Optional manual entry for testing or corrections. Most rows are created at sign-in."
-      >
-        <form
-          onSubmit={handleCreate}
-          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
-        >
-          <Select label="User (optional)" value={cUser} onChange={(e) => setCUser(e.target.value)}>
-            <option value="">—</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.full_name} (#{u.id})
-              </option>
-            ))}
-          </Select>
-          <Input
-            label="Device info (optional)"
-            value={cDevice}
-            onChange={(e) => setCDevice(e.target.value)}
-            placeholder="e.g., Chrome on Windows"
-          />
-          <Input
-            label="IP Address (optional)"
-            value={cIp}
-            onChange={(e) => setCIp(e.target.value)}
-            placeholder="e.g., 192.168.1.1"
-          />
-          <div className="flex items-end">
-            <Button type="submit" disabled={submitting} className="w-full">
-              {submitting ? "Creating…" : "Create Record"}
-            </Button>
-          </div>
-        </form>
-      </Card>
-
-      <Card
-        title="Login history records"
-        subtitle="Edit or delete rows as needed. Filters above only affect this view."
+        title={auditOnly ? "Admin actions" : "Activity log"}
+        subtitle={
+          auditOnly
+            ? "Each row is one successful mutating API call by an administrator. Edit or delete only for corrections."
+            : "Rows are created automatically at sign-in and when an admin change succeeds. Edit or delete only for corrections."
+        }
       >
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div className="text-sm text-slate-600 dark:text-slate-400">
-            Showing {filteredRows.length} of {rows.length} records
+            {auditOnly ? (
+              <>
+                Showing <span className="font-semibold text-slate-800 dark:text-slate-300">{filteredRows.length}</span>{" "}
+                audit {filteredRows.length === 1 ? "event" : "events"}
+                <span className="text-slate-500 dark:text-slate-500">
+                  {" "}
+                  ({rows.filter(isAuditRow).length} total AUDIT rows in store)
+                </span>
+              </>
+            ) : (
+              <>
+                Showing {filteredRows.length} of {rows.length} records
+              </>
+            )}
           </div>
           <Button variant="ghost" className="!text-xs" type="button" onClick={() => refresh()}>
             Refresh now
@@ -356,14 +416,26 @@ export function AdminLoginHistoryPage() {
         </div>
 
         <div className="overflow-x-auto rounded-lg border border-primary-200 bg-white shadow-sm dark:border-primary-900/40 dark:bg-slate-950/40 dark:shadow-none">
-          <table className="w-full min-w-[800px] border-collapse text-left text-sm">
+          <table
+            className={cn(
+              "w-full border-collapse text-left text-sm",
+              auditOnly ? "min-w-[880px]" : "min-w-[800px]"
+            )}
+          >
             <thead className="border-b border-primary-200 bg-slate-50/95 text-xs uppercase tracking-wide text-primary-900 shadow-sm backdrop-blur-sm dark:border-primary-900/40 dark:bg-slate-900/95 dark:text-primary-400/95 dark:shadow-none">
               <tr>
                 <th className="px-4 py-2.5 font-semibold">ID</th>
-                <th className="px-4 py-2.5 font-semibold">User</th>
-                <th className="px-4 py-2.5 font-semibold">Device info</th>
-                <th className="px-4 py-2.5 font-semibold">IP address</th>
-                <th className="px-4 py-2.5 font-semibold">Login time</th>
+                {!auditOnly ? (
+                  <th className="px-4 py-2.5 font-semibold">Type</th>
+                ) : (
+                  <th className="px-4 py-2.5 font-semibold">Activity</th>
+                )}
+                <th className="px-4 py-2.5 font-semibold">{auditOnly ? "Admin" : "User"}</th>
+                <th className="px-4 py-2.5 font-semibold">
+                  {auditOnly ? "Request" : "Details"}
+                </th>
+                <th className="px-4 py-2.5 font-semibold">IP</th>
+                <th className="px-4 py-2.5 font-semibold">Time</th>
                 <th className="px-4 py-2.5 text-center font-semibold text-slate-700 dark:text-primary-400/95">
                   Actions
                 </th>
@@ -373,21 +445,27 @@ export function AdminLoginHistoryPage() {
               {filteredRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={colSpan}
                     className="bg-white px-4 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
                   >
                     <div className="space-y-2">
                       <p className="text-base font-medium text-slate-800 dark:text-slate-200">
-                        No login history records found
+                        No records match your filters
                       </p>
                       <p className="text-sm">
-                        Try adjusting your search filters or create a new record above.
+                        Clear filters or wait for new sign-ins or admin actions.
                       </p>
                     </div>
                   </td>
                 </tr>
               ) : (
-                filteredRows.map((r) => (
+                filteredRows.map((r) => {
+                  const parsed = isAuditRow(r) ? parseAuditLine(r.device_info) : null;
+                  const requestLine =
+                    parsed && (parsed.method || parsed.path)
+                      ? `${parsed.method || ""} ${parsed.path || ""}`.trim()
+                      : null;
+                  return (
                   <Fragment key={r.id}>
                     <tr
                       className={cn(
@@ -398,6 +476,27 @@ export function AdminLoginHistoryPage() {
                       <td className="px-4 py-2.5 font-mono text-xs tabular-nums text-slate-600 dark:text-primary-300">
                         #{r.id}
                       </td>
+                      {!auditOnly ? (
+                        <td className="whitespace-nowrap px-4 py-2.5">
+                          {isAuditRow(r) ? (
+                            <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">
+                              Admin
+                            </span>
+                          ) : (
+                            <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                              Login
+                            </span>
+                          )}
+                        </td>
+                      ) : (
+                        <td className="whitespace-nowrap px-4 py-2.5">
+                          {parsed?.activity ? (
+                            <AuditActivityBadge activity={parsed.activity} />
+                          ) : (
+                            <span className="text-slate-500">—</span>
+                          )}
+                        </td>
+                      )}
                       <td className="px-4 py-2.5">
                         {r.user_id ? (
                           <div className="flex items-center space-x-2">
@@ -414,8 +513,18 @@ export function AdminLoginHistoryPage() {
                           <span className="text-slate-500 dark:text-slate-500">—</span>
                         )}
                       </td>
-                      <td className="max-w-[200px] truncate px-4 py-2.5 text-slate-800 dark:text-slate-300">
-                        {r.device_info || "—"}
+                      <td
+                        className={cn(
+                          "max-w-[min(28rem,55vw)] truncate px-4 py-2.5",
+                          auditOnly
+                            ? "font-mono text-xs text-slate-800 dark:text-slate-300"
+                            : "text-slate-800 dark:text-slate-300"
+                        )}
+                        title={r.device_info || undefined}
+                      >
+                        {auditOnly
+                          ? requestLine || r.device_info || "—"
+                          : r.device_info || "—"}
                       </td>
                       <td className="px-4 py-2.5">
                         <span className="font-mono text-xs text-slate-600 dark:text-slate-400">
@@ -446,7 +555,7 @@ export function AdminLoginHistoryPage() {
                     </tr>
                     {editingId === r.id ? (
                       <tr className="border-b border-slate-100 bg-primary-50/90 dark:border-slate-800/60 dark:bg-primary-950/25">
-                        <td colSpan={6} className="p-4">
+                        <td colSpan={colSpan} className="p-4">
                           <form onSubmit={handleUpdate} className="space-y-4">
                             <div className="grid gap-4 sm:grid-cols-3">
                               <Select
@@ -467,7 +576,7 @@ export function AdminLoginHistoryPage() {
                                 ))}
                               </Select>
                               <Input
-                                label="Device Info"
+                                label="Details (browser UA or AUDIT line)"
                                 value={editForm.device_info}
                                 onChange={(e) =>
                                   setEditForm((f) => ({
@@ -475,7 +584,7 @@ export function AdminLoginHistoryPage() {
                                     device_info: e.target.value,
                                   }))
                                 }
-                                placeholder="Device information"
+                                placeholder="User-Agent or AUDIT …"
                               />
                               <Input
                                 label="IP Address"
@@ -512,7 +621,8 @@ export function AdminLoginHistoryPage() {
                       </tr>
                     ) : null}
                   </Fragment>
-                ))
+                );
+                })
               )}
             </tbody>
           </table>
@@ -522,12 +632,12 @@ export function AdminLoginHistoryPage() {
       {/* Delete Confirmation Modal */}
       <DeleteModal
         isOpen={deleteModal.isOpen}
-        onClose={() => setDeleteModal({ isOpen: false, id: null })}
+        onClose={() => !deleting && setDeleteModal({ isOpen: false, id: null })}
         onConfirm={confirmDelete}
-        title="Delete Login History Record"
-        message="Are you sure you want to delete this login history record? This action cannot be undone."
-        itemName="Login History Record"
-        loading={savingEdit}
+        title="Delete activity row"
+        message="Remove this row from the log? Sign-ins and admin actions can be logged again later."
+        itemName="Activity row"
+        loading={deleting}
       />
     </div>
   );

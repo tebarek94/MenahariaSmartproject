@@ -4,6 +4,8 @@ import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { formatDate } from "@/utils/format.js";
+import { RefreshCwIcon } from "@/ui/icons";
+// import { RefreshIcon } from "@/ui/icons.jsx";
 
 function seatLabel(t) {
   if (t.seat_number != null && t.seat_number !== "") return String(t.seat_number);
@@ -56,19 +58,12 @@ export function DriverPassengersPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-1">
-          <h2 className="text-lg font-bold text-slate-900 dark:text-white sm:text-xl lg:text-2xl">
-            Passengers on my trips
-          </h2>
-          <p className="text-sm text-slate-600 dark:text-primary-400/80">
-            Everyone booked on trips where you are assigned as driver — same data scope as the admin
-            tickets list, filtered to your trips only (
-            <code className="text-xs text-slate-500 dark:text-primary-300">GET /api/tickets</code>
-            ).
-          </p>
-        </div>
+        {/* add simple text */}
+        <p className="text-sm text-p-muted">
+          This page shows all passengers on your trips.
+        </p>
         <Button variant="ghost" className="shrink-0 self-start" onClick={() => load()}>
-          Refresh
+          <RefreshCwIcon className="w-4 h-4" />
         </Button>
       </div>
 

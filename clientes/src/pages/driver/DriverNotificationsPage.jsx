@@ -8,6 +8,7 @@ import { Card } from "@/ui/Card.jsx";
 import { Button } from "@/ui/Button.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { formatDate } from "@/utils/format.js";
+import { RefreshIcon } from "@/ui/icons.jsx";
 
 export function DriverNotificationsPage() {
   const [rows, setRows] = useState([]);
@@ -74,13 +75,9 @@ export function DriverNotificationsPage() {
           <h2 className="text-lg font-bold text-slate-900 dark:text-white sm:text-xl lg:text-2xl">
             Notifications
           </h2>
-          <p className="text-sm text-slate-600 dark:text-primary-400/80">
-            Alerts when passengers book your trips (created automatically). Updates in real time when
-            connected, and also refreshes every minute and when you return to this tab.
-          </p>
         </div>
         <Button variant="ghost" className="self-start" onClick={() => refresh()}>
-          Refresh now
+          <RefreshIcon className="w-4 h-4" />
         </Button>
       </div>
 

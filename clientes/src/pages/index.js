@@ -41,7 +41,6 @@ export {
   AdminNotificationsPage,
   AdminSupportChatPage,
   AdminReportsPage,
-  AdminRelationsOverviewPage,
   AdminProfilePage,
   AdminLiveGpsPage,
 } from "./admin/index.js";

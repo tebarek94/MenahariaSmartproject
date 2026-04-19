@@ -285,48 +285,12 @@ export function UserTicketsPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
-          <h2 className="text-p-heading text-lg font-bold sm:text-xl lg:text-2xl">
-            My tickets
-          </h2>
-          <p className="text-p-muted">
-            Download your tickets here. To ask for money back or cancel a booking,
-            use <strong className="text-p-body">Request refund</strong> (paid) or{" "}
-            <strong className="text-p-body">Request cancellation</strong> (unpaid)
-            on each ticket card when departure is at least 10 minutes away. Track
-            every submission on{" "}
-            <Link
-              to={ROUTES.PASSENGER_REFUNDS}
-              className="font-medium text-emerald-400 underline hover:no-underline"
-            >
-              Refund requests
-            </Link>{" "}
-            (same as the sidebar link).
-          </p>
+    
           {lastSync ? (
             <p className="text-p-subtle text-xs">
               Last updated {lastSync.toLocaleString()} · every {POLL_MS / 1000}s
             </p>
           ) : null}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link to={ROUTES.PASSENGER_DASHBOARD}>
-            <Button variant="ghost" className="!text-xs">
-              ← Dashboard
-            </Button>
-          </Link>
-          <Link to={ROUTES.PASSENGER_BOOK}>
-            <Button variant="ghost" className="!text-xs">
-              Book a trip
-            </Button>
-          </Link>
-          <Button
-            variant="ghost"
-            className="!text-xs"
-            type="button"
-            onClick={() => loadAll({ quiet: true })}
-          >
-            Refresh now
-          </Button>
         </div>
       </div>
 

@@ -61,32 +61,6 @@ export function PassengerRefundRequestsPage() {
           <h2 className="text-p-heading text-lg font-bold sm:text-xl">
             Refund & cancellation requests
           </h2>
-          <p className="text-p-muted text-sm">
-            New requests are started on{" "}
-            <Link
-              to={ROUTES.PASSENGER_TICKETS}
-              className="font-medium text-emerald-400 underline hover:no-underline"
-            >
-              My tickets
-            </Link>
-            ; this page only lists what you already submitted. Admins review and
-            you get an in-app notification when they decide.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link to={ROUTES.PASSENGER_TICKETS}>
-            <Button type="button" className="!text-xs">
-              Go to My tickets
-            </Button>
-          </Link>
-          <Button
-            type="button"
-            variant="ghost"
-            className="!text-xs"
-            onClick={() => refresh()}
-          >
-            Refresh
-          </Button>
         </div>
       </div>
 
@@ -102,39 +76,7 @@ export function PassengerRefundRequestsPage() {
             <p className="text-p-muted text-sm">
               You have not submitted any refund or cancellation requests yet.
             </p>
-            <ol className="list-decimal space-y-2 pl-5 text-sm text-p-body">
-              <li>
-                Open{" "}
-                <Link
-                  to={ROUTES.PASSENGER_TICKETS}
-                  className="font-medium text-emerald-400 underline hover:no-underline"
-                >
-                  My tickets
-                </Link>
-                .
-              </li>
-              <li>
-                On a ticket card, use the button that matches your case:{" "}
-                <strong className="text-p-heading">Request refund</strong> if you
-                already paid, or{" "}
-                <strong className="text-p-heading">Request cancellation</strong>{" "}
-                if the fare is still unpaid (reserved).
-              </li>
-              <li>
-                The button only appears when departure is still{" "}
-                <strong className="text-p-heading">more than 10 minutes away</strong>
-                , the ticket is active, and you do not already have a pending or
-                approved request for that ticket.
-              </li>
-              <li>
-                After you submit, come back here —{" "}
-                <strong className="text-p-heading">Refund requests</strong> in the
-                sidebar — to see status (pending / approved / rejected).
-              </li>
-            </ol>
-            <Link to={ROUTES.PASSENGER_TICKETS}>
-              <Button type="button">Go to My tickets</Button>
-            </Link>
+        
           </div>
         ) : (
           <ul className="divide-y divide-white/10">

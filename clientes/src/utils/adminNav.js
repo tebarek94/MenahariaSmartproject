@@ -10,7 +10,6 @@ export const ADMIN_NAV_SECTIONS = [
     items: [
       { to: ROUTES.DASHBOARD, label: "Overview", end: true },
       { to: ROUTES.ADMIN_LIVE_GPS, label: "Live GPS", end: true },
-      { to: ROUTES.ADMIN_RELATIONS, label: "All relations", end: true },
     ],
   },
   {
@@ -21,6 +20,7 @@ export const ADMIN_NAV_SECTIONS = [
       { to: ROUTES.ADMIN_PERMISSIONS, label: "Permissions", end: true },
       { to: ROUTES.ADMIN_ROLE_PERMISSIONS, label: "Role permissions", end: true },
       { to: ROUTES.ADMIN_LOGIN_HISTORY, label: "Login history", end: true },
+      { to: ROUTES.ADMIN_AUDIT_LOG, label: "Audit log", end: true },
     ],
   },
   {
@@ -81,10 +81,10 @@ export const ADMIN_PAGE_TITLES = {
   [ROUTES.ADMIN_PAYMENTS]: "Payments",
   [ROUTES.ADMIN_CARGO]: "Cargo",
   [ROUTES.ADMIN_LOGIN_HISTORY]: "Login history",
+  [ROUTES.ADMIN_AUDIT_LOG]: "Audit log",
   [ROUTES.ADMIN_NOTIFICATIONS]: "Notifications",
   [ROUTES.ADMIN_SUPPORT_CHAT]: "Support chat",
   [ROUTES.ADMIN_REPORTS]: "Reports",
-  [ROUTES.ADMIN_RELATIONS]: "Relations overview",
 };
 
 export function adminTitleForPath(pathname) {

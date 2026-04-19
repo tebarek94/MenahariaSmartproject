@@ -13,6 +13,4 @@ export const viewsService = {
     api.get(`/api/views/cargo-relations?limit=${limit}`),
   seatsRelations: (limit = 100) =>
     api.get(`/api/views/seats-relations?limit=${limit}`),
-  relationsOverview: (limit = 40) =>
-    api.get(`/api/views/relations-overview?limit=${limit}`),
 };

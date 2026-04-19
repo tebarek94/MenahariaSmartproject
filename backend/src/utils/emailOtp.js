@@ -4,9 +4,23 @@ function smtpConfigured() {
   return Boolean(String(process.env.SMTP_HOST || "").trim());
 }
 
+/**
+ * When true, OTPs are printed to the server console instead of SMTP.
+ * - PASSENGER_OTP_LOG_ONLY=1 or EMAIL_LOG_ONLY=1: always log (overrides real send).
+ * - Non-production: log by default so incomplete/wrong SMTP in .env does not 502 2FA flows.
+ *   Set SMTP_FORCE_SEND=1 to actually use SMTP in development (e.g. testing Gmail).
+ * - Production: send via SMTP when configured (same as before).
+ */
 function logOnlyMode() {
   if (String(process.env.PASSENGER_OTP_LOG_ONLY || "").trim() === "1") return true;
-  if (process.env.NODE_ENV !== "production" && !smtpConfigured()) return true;
+  if (String(process.env.EMAIL_LOG_ONLY || "").trim() === "1") return true;
+
+  if (process.env.NODE_ENV !== "production") {
+    const forceSend = String(process.env.SMTP_FORCE_SEND || "").trim() === "1";
+    if (forceSend && smtpConfigured()) return false;
+    return true;
+  }
+
   return false;
 }
 
@@ -31,7 +45,11 @@ export async function sendPassengerOtpEmail(to, otpPlain) {
       "[passenger OTP email — dev / log-only]\n",
       `To: ${to}\nSubject: ${subject}\n\n${text}\n`
     );
-    return { ok: true, devLog: "OTP printed to server console (dev or PASSENGER_OTP_LOG_ONLY=1)." };
+    return {
+      ok: true,
+      devLog:
+        "OTP printed to server console (development default, or PASSENGER_OTP_LOG_ONLY / EMAIL_LOG_ONLY). Set SMTP_FORCE_SEND=1 to send real mail in dev.",
+    };
   }
 
   const port = Number(process.env.SMTP_PORT) || 587;
@@ -87,7 +105,11 @@ export async function sendTwoFactorOtpEmail(to, otpPlain, kind = "login") {
       `[2FA email OTP — ${kind} — dev / log-only]\n`,
       `To: ${to}\nSubject: ${subject}\n\n${text}\n`
     );
-    return { ok: true, devLog: "OTP printed to server console (dev or PASSENGER_OTP_LOG_ONLY=1)." };
+    return {
+      ok: true,
+      devLog:
+        "OTP printed to server console (development default, or PASSENGER_OTP_LOG_ONLY / EMAIL_LOG_ONLY). Set SMTP_FORCE_SEND=1 to send real mail in dev.",
+    };
   }
 
   const port = Number(process.env.SMTP_PORT) || 587;

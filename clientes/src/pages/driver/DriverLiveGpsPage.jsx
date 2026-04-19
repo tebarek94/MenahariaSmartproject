@@ -126,17 +126,10 @@ export function DriverLiveGpsPage() {
 
   return (
     <div className="w-full min-w-0 space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-white sm:text-2xl">Share location</h1>
-        <p className="mt-1 max-w-3xl text-sm text-primary-400/85 sm:text-base">
-          When you turn sharing on, your GPS is sent to the operations team in near real time
-          (throttled to about once every {EMIT_INTERVAL_MS / 1000}s). Uses your browser location
-          — no paid map API; the admin map uses free OpenStreetMap tiles.
-        </p>
-        <p className="mt-2 text-xs text-slate-500">
-          HTTPS or localhost is required for geolocation in most browsers.
-        </p>
-      </div>
+     {/* add sample text */}
+     <p className="text-sm text-p-muted">
+      This page shows your live GPS position on a map. It is updated every {EMIT_INTERVAL_MS / 1000} seconds.
+     </p>
 
       <Card title="Controls" subtitle="Start only while you are on duty and allowed to broadcast location.">
         <div className="flex flex-wrap gap-3">

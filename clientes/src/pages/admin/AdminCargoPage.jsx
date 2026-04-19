@@ -655,13 +655,9 @@ export function AdminCargoPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <h1 className="text-p-heading text-xl font-bold tracking-tight sm:text-2xl">
-            Cargo
+            This page shows all cargo.
           </h1>
-          <p className="text-p-muted max-w-xl text-sm sm:text-[0.95rem]">
-            Book shipments on trips and assign them to drivers. Use{" "}
-            <strong className="font-semibold text-p-heading">Add cargo</strong> to open the
-            create form, then use the table and bulk assign below.
-          </p>
+          
         </div>
         <Button
           type="button"

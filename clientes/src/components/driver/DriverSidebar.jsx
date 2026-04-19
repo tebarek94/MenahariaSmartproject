@@ -14,12 +14,6 @@ const DRIVER_NAV_SECTIONS = [
       { to: ROUTES.DRIVER_NOTIFICATIONS, label: "Notifications", end: true },
     ],
   },
-  {
-    title: "Account",
-    items: [
-      { to: ROUTES.DRIVER_PROFILE, label: "Profile", end: true },
-    ],
-  },
 ];
 
 export function DriverSidebar({ open, onClose, theme }) {
@@ -93,7 +87,7 @@ export function DriverSidebar({ open, onClose, theme }) {
           </button>
         </div>
 
-        <nav className="flex-1 space-y-4 overflow-y-auto p-3">
+        <nav className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
           {DRIVER_NAV_SECTIONS.map((section) => (
             <div key={section.title}>
               <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
@@ -118,10 +112,22 @@ export function DriverSidebar({ open, onClose, theme }) {
 
         <div
           className={cn(
-            "border-t p-3",
+            "shrink-0 border-t p-3",
             isLight ? "border-primary-200" : "border-primary-900/40",
           )}
-        />
+        >
+          <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            Account
+          </p>
+          <NavLink
+            to={ROUTES.DRIVER_PROFILE}
+            end
+            className={linkClass}
+            onClick={handleNav}
+          >
+            Profile
+          </NavLink>
+        </div>
       </aside>
     </>
   );

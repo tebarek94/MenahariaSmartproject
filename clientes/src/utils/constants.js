@@ -1,11 +1,10 @@
 /**
- * API base URL. Production: set `VITE_API_URL`. Dev: defaults to backend on :5000 so
- * Socket.IO hits the server directly (avoids flaky Vite `/socket.io` ws proxy / ECONNABORTED noise).
+ * API base URL. Set `VITE_API_URL` when the API is on another origin (e.g. production).
+ * Dev default: empty → requests use relative `/api/...` through the Vite proxy (same origin as the
+ * app), which keeps `Authorization` reliable. Socket.IO uses the same origin; `vite.config.js` proxies `/socket.io`.
  */
 const envApiBase = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "";
-export const API_BASE =
-  envApiBase ||
-  (import.meta.env.DEV ? "http://localhost:5000" : "");
+export const API_BASE = envApiBase || (import.meta.env.DEV ? "" : "");
 
 export const STORAGE_KEYS = {
   TOKEN: "menahariya_token",
@@ -81,12 +80,12 @@ export const ROUTES = {
   ADMIN_PAYMENTS: "/admin/payments",
   ADMIN_CARGO: "/admin/cargo",
   ADMIN_LOGIN_HISTORY: "/admin/login-history",
+  /** Admin API actions only (AUDIT rows); same data source as login history */
+  ADMIN_AUDIT_LOG: "/admin/audit-log",
   ADMIN_NOTIFICATIONS: "/admin/notifications",
   ADMIN_REFUND_REQUESTS: "/admin/refund-requests",
   ADMIN_SUPPORT_CHAT: "/admin/support-chat",
   ADMIN_REPORTS: "/admin/reports",
-  /** Read-only joined views */
-  ADMIN_RELATIONS: "/admin/relations",
   /** Live driver GPS (OpenStreetMap + Socket.IO) */
   ADMIN_LIVE_GPS: "/admin/live-gps",
   DRIVER_LIVE_GPS: "/driver/live-gps",

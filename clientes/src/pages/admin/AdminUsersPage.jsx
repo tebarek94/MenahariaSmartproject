@@ -16,6 +16,11 @@ import {
   normalizeEthiopianPhone,
 } from "@/utils/ethiopianPhone.js";
 import { cn } from "@/utils/cn.js";
+import {
+  isAdminRole,
+  isDriverRole,
+  isPassengerRole,
+} from "@/utils/roles.js";
 
 const USER_SORT_KEYS = [
   { key: "id", label: "Id" },
@@ -25,6 +30,35 @@ const USER_SORT_KEYS = [
   { key: "role_id", label: "Role" },
   { key: "status", label: "Status" },
 ];
+
+const CATEGORY_ORDER = ["passenger", "driver", "admin", "other"];
+
+const CATEGORY_META = {
+  passenger: {
+    label: "Passengers",
+    description: "Book trips, tickets, and cargo",
+  },
+  driver: {
+    label: "Drivers",
+    description: "Trips, passengers, and cargo on the road",
+  },
+  admin: {
+    label: "Administrators",
+    description: "Manage routes, vehicles, and settings",
+  },
+  other: {
+    label: "Other roles",
+    description: "Any role name not matched above",
+  },
+};
+
+function categorizeUser(u, roleNameById) {
+  const rn = roleNameById.get(Number(u.role_id)) ?? "";
+  if (isAdminRole(rn)) return "admin";
+  if (isDriverRole(rn)) return "driver";
+  if (isPassengerRole(rn)) return "passenger";
+  return "other";
+}
 
 export function AdminUsersPage() {
   const [users, setUsers] = useState([]);
@@ -49,6 +83,9 @@ export function AdminUsersPage() {
   const [tableSearch, setTableSearch] = useState("");
   const [sortKey, setSortKey] = useState("full_name");
   const [sortDir, setSortDir] = useState("asc");
+
+  /** Which role group table is visible (`null` = all collapsed). */
+  const [openCategory, setOpenCategory] = useState(null);
 
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -140,6 +177,26 @@ export function AdminUsersPage() {
     });
     return rows;
   }, [users, tableSearch, sortKey, sortDir, roleNameById]);
+
+  const usersByCategory = useMemo(() => {
+    const buckets = {
+      admin: [],
+      driver: [],
+      passenger: [],
+      other: [],
+    };
+    for (const u of filteredSortedUsers) {
+      const cat = categorizeUser(u, roleNameById);
+      buckets[cat].push(u);
+    }
+    return buckets;
+  }, [filteredSortedUsers, roleNameById]);
+
+  const visibleCategoryKeys = useMemo(() => {
+    return CATEGORY_ORDER.filter(
+      (k) => k !== "other" || usersByCategory.other.length > 0
+    );
+  }, [usersByCategory.other.length]);
 
   function handleColumnSort(columnKey) {
     if (sortKey === columnKey) {
@@ -332,10 +389,10 @@ export function AdminUsersPage() {
             Users
           </h1>
           <p className="text-p-muted max-w-xl text-sm sm:text-[0.95rem]">
-            View and edit accounts. Use{" "}
-            <strong className="font-semibold text-p-heading">Add user</strong> to open the
-            registration form and assign{" "}
-            <strong className="font-semibold text-p-heading">any role</strong> from your
+            View and edit accounts by role (passenger, driver, admin). Open a group card to show
+            its table; only one list is open at a time. Use{" "}
+            <strong className="font-semibold text-p-heading">Add user</strong> to register and
+            assign <strong className="font-semibold text-p-heading">any role</strong> from your
             database.
           </p>
         </div>
@@ -481,8 +538,18 @@ export function AdminUsersPage() {
         </div>
       ) : null}
 
-      <Card title="All users" subtitle="Password hashes are never loaded in the UI. Sort columns by clicking the table headers (▲/▼).">
-        <div className="mb-4 max-w-md border-b border-primary-200/90 pb-4 dark:border-primary-900/25">
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-p-heading text-lg font-bold sm:text-xl">
+            Accounts by role
+          </h2>
+          <p className="text-p-muted mt-1 max-w-2xl text-sm">
+            Pick a group to show its table. Opening one hides the others. Search applies to all
+            groups before counts and lists update.
+          </p>
+        </div>
+
+        <div className="mb-2 max-w-md">
           <Input
             label="Search"
             type="search"
@@ -494,89 +561,188 @@ export function AdminUsersPage() {
             className="w-full"
           />
         </div>
-        <p className="mb-2 text-xs text-slate-600 dark:text-slate-500">
-          Showing{" "}
-          <span className="font-semibold text-slate-800 dark:text-slate-300">
-            {filteredSortedUsers.length}
-          </span>{" "}
-          of{" "}
-          <span className="font-semibold text-slate-800 dark:text-slate-300">{users.length}</span>{" "}
-          users
-          {tableSearch.trim() ? " (filtered)" : ""}
+
+        <div
+          className={cn(
+            "grid gap-3",
+            visibleCategoryKeys.length >= 4
+              ? "sm:grid-cols-2 xl:grid-cols-4"
+              : "sm:grid-cols-2 lg:grid-cols-3"
+          )}
+        >
+          {visibleCategoryKeys.map((key) => {
+            const meta = CATEGORY_META[key];
+            const count = usersByCategory[key].length;
+            const open = openCategory === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() =>
+                  setOpenCategory((prev) => (prev === key ? null : key))
+                }
+                className={cn(
+                  "rounded-2xl border p-4 text-left transition-all",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50",
+                  open
+                    ? "border-primary-500 bg-primary-50/90 shadow-md ring-2 ring-primary-500/25 dark:border-primary-500/80 dark:bg-primary-950/40 dark:ring-primary-500/30"
+                    : "border-primary-200/90 bg-white hover:border-primary-400 hover:shadow-sm dark:border-primary-900/50 dark:bg-slate-950/30 dark:hover:border-primary-700"
+                )}
+                aria-expanded={open}
+                aria-controls={`admin-users-table-${key}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                      {meta.label}
+                    </p>
+                    <p className="mt-1 text-3xl font-bold tabular-nums text-apptext dark:text-slate-100">
+                      {count}
+                    </p>
+                    <p className="mt-1 text-xs leading-snug text-slate-600 dark:text-slate-400">
+                      {meta.description}
+                    </p>
+                  </div>
+                  <span
+                    className="shrink-0 text-lg text-slate-400 dark:text-slate-500"
+                    aria-hidden
+                  >
+                    {open ? "▼" : "▶"}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <p className="text-xs text-slate-600 dark:text-slate-500">
+          {users.length === 0 ? (
+            <>No users loaded.</>
+          ) : (
+            <>
+              <span className="font-semibold text-slate-800 dark:text-slate-300">
+                {filteredSortedUsers.length}
+              </span>{" "}
+              account
+              {filteredSortedUsers.length === 1 ? "" : "s"} match
+              {tableSearch.trim() ? " your search" : ""} of{" "}
+              <span className="font-semibold text-slate-800 dark:text-slate-300">
+                {users.length}
+              </span>{" "}
+              total
+            </>
+          )}
         </p>
-        <div className="overflow-x-auto rounded-lg border border-primary-200 bg-white shadow-sm dark:border-primary-900/40 dark:bg-slate-950/40 dark:shadow-none">
-          <table className="w-full min-w-[720px] border-collapse text-left text-sm">
-            <thead className="sticky top-0 z-[1] border-b border-primary-200 bg-slate-50/95 text-xs uppercase tracking-wide text-primary-900 shadow-sm backdrop-blur-sm dark:border-primary-900/40 dark:bg-slate-900/95 dark:text-primary-400/95 dark:shadow-none">
-              <tr>
-                {USER_SORT_KEYS.map(({ key, label }) => {
-                  const active = sortKey === key;
-                  return (
-                    <th key={key} scope="col" className="px-2 py-2.5 font-semibold">
+      </div>
+
+      {openCategory ? (
+        <Card
+          title={CATEGORY_META[openCategory].label}
+          subtitle="Password hashes are never loaded in the UI. Sort columns by clicking the table headers (▲/▼)."
+        >
+          <p className="mb-3 text-xs text-slate-600 dark:text-slate-500">
+            Showing{" "}
+            <span className="font-semibold text-slate-800 dark:text-slate-300">
+              {usersByCategory[openCategory].length}
+            </span>{" "}
+            {CATEGORY_META[openCategory].label.toLowerCase()}
+            {tableSearch.trim() ? " matching search" : ""}.
+          </p>
+          <div
+            id={`admin-users-table-${openCategory}`}
+            className="overflow-x-auto rounded-lg border border-primary-200 bg-white shadow-sm dark:border-primary-900/40 dark:bg-slate-950/40 dark:shadow-none"
+          >
+            <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+              <thead className="sticky top-0 z-[1] border-b border-primary-200 bg-slate-50/95 text-xs uppercase tracking-wide text-primary-900 shadow-sm backdrop-blur-sm dark:border-primary-900/40 dark:bg-slate-900/95 dark:text-primary-400/95 dark:shadow-none">
+                <tr>
+                  {USER_SORT_KEYS.map(({ key, label }) => {
+                    const active = sortKey === key;
+                    return (
+                      <th key={key} scope="col" className="px-2 py-2.5 font-semibold">
+                        <button
+                          type="button"
+                          onClick={() => handleColumnSort(key)}
+                          className={cn(
+                            "flex w-full min-w-0 items-center justify-between gap-1 rounded-md px-1.5 py-1 text-left transition-colors",
+                            "text-slate-700 hover:bg-primary-100/90 hover:text-primary-950",
+                            "dark:text-primary-300/95 dark:hover:bg-white/10 dark:hover:text-primary-50",
+                            active &&
+                              "bg-primary-100/80 font-semibold text-primary-950 dark:bg-white/10 dark:font-semibold dark:text-primary-100"
+                          )}
+                          aria-sort={
+                            active
+                              ? sortDir === "asc"
+                                ? "ascending"
+                                : "descending"
+                              : "none"
+                          }
+                        >
+                          <span className="truncate">{label}</span>
+                          <span
+                            className="shrink-0 tabular-nums text-[0.65rem] text-slate-500 opacity-90 dark:text-primary-400/80"
+                            aria-hidden
+                          >
+                            {active ? (sortDir === "asc" ? "▲" : "▼") : "◇"}
+                          </span>
+                        </button>
+                      </th>
+                    );
+                  })}
+                  <th
+                    scope="col"
+                    className="px-3 py-2.5 font-semibold text-slate-700 dark:text-primary-400/95"
+                  >
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-800/80">
+                {users.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
+                    >
+                      No users
+                    </td>
+                  </tr>
+                ) : filteredSortedUsers.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
+                    >
+                      No users match your search.{" "}
                       <button
                         type="button"
-                        onClick={() => handleColumnSort(key)}
-                        className={cn(
-                          "flex w-full min-w-0 items-center justify-between gap-1 rounded-md px-1.5 py-1 text-left transition-colors",
-                          "text-slate-700 hover:bg-primary-100/90 hover:text-primary-950",
-                          "dark:text-primary-300/95 dark:hover:bg-white/10 dark:hover:text-primary-50",
-                          active &&
-                            "bg-primary-100/80 font-semibold text-primary-950 dark:bg-white/10 dark:font-semibold dark:text-primary-100"
-                        )}
-                        aria-sort={
-                          active
-                            ? sortDir === "asc"
-                              ? "ascending"
-                              : "descending"
-                            : "none"
-                        }
+                        className="font-medium text-primary-700 underline decoration-primary-300 underline-offset-2 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+                        onClick={() => setTableSearch("")}
                       >
-                        <span className="truncate">{label}</span>
-                        <span
-                          className="shrink-0 tabular-nums text-[0.65rem] text-slate-500 opacity-90 dark:text-primary-400/80"
-                          aria-hidden
-                        >
-                          {active ? (sortDir === "asc" ? "▲" : "▼") : "◇"}
-                        </span>
+                        Clear search
                       </button>
-                    </th>
-                  );
-                })}
-                <th
-                  scope="col"
-                  className="px-3 py-2.5 font-semibold text-slate-700 dark:text-primary-400/95"
-                >
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 dark:divide-slate-800/80">
-              {users.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
-                  >
-                    No users
-                  </td>
-                </tr>
-              ) : filteredSortedUsers.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
-                  >
-                    No users match your search.{" "}
-                    <button
-                      type="button"
-                      className="font-medium text-primary-700 underline decoration-primary-300 underline-offset-2 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
-                      onClick={() => setTableSearch("")}
+                    </td>
+                  </tr>
+                ) : usersByCategory[openCategory].length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="bg-white px-3 py-10 text-center text-slate-600 dark:bg-slate-950/20 dark:text-slate-400"
                     >
-                      Clear search
-                    </button>
-                  </td>
-                </tr>
-              ) : (
-                filteredSortedUsers.map((u) => (
+                      No accounts in this group
+                      {tableSearch.trim()
+                        ? " for your current search."
+                        : "."}{" "}
+                      <button
+                        type="button"
+                        className="font-medium text-primary-700 underline decoration-primary-300 underline-offset-2 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+                        onClick={() => setOpenCategory(null)}
+                      >
+                        Close
+                      </button>
+                    </td>
+                  </tr>
+                ) : (
+                  usersByCategory[openCategory].map((u) => (
                   <Fragment key={u.id}>
                     <tr className="border-b border-slate-100 bg-white transition-colors hover:bg-primary-50/70 dark:border-slate-800/60 dark:bg-slate-950/20 dark:hover:bg-slate-800/35">
                       <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-slate-600 dark:text-slate-400">
@@ -740,12 +906,20 @@ export function AdminUsersPage() {
                       </tr>
                     ) : null}
                   </Fragment>
-                ))
-              )}
-            </tbody>
-          </table>
+                  ))
+                )
+              }
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : (
+        <div className="rounded-xl border border-dashed border-primary-200/80 bg-slate-50/50 px-4 py-8 text-center text-sm text-slate-600 dark:border-primary-900/50 dark:bg-slate-950/20 dark:text-slate-400">
+          Select <strong className="text-p-heading">Passengers</strong>,{" "}
+          <strong className="text-p-heading">Drivers</strong>, or{" "}
+          <strong className="text-p-heading">Administrators</strong> above to load that list.
         </div>
-      </Card>
+      )}
 
       {/* Delete Confirmation Modal */}
       <DeleteModal

@@ -28,6 +28,7 @@ import supportChatRoutes from "./src/routes/supportChatRoutes.js";
 import refundRequestRoutes from "./src/routes/refundRequestRoutes.js";
 import { initSocketServer } from "./src/realtime/socketServer.js";
 import * as chapaPaymentController from "./src/controllers/chapaPaymentController.js";
+import { adminAuditLoginHistory } from "./src/middleware/adminAuditLogMiddleware.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
@@ -76,6 +77,9 @@ app.all("/api/payments/chapa/callback", (_req, res) => {
 });
 
 app.use(express.json({ limit: "1mb" }));
+
+/** After auth runs on each route, successful admin writes are mirrored into `login_history` (see middleware). */
+app.use(adminAuditLoginHistory);
 
 app.get("/", (req, res) => {
   res.json({

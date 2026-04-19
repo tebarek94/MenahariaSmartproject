@@ -5,9 +5,10 @@ export function DriverDashboardPage() {
   return (
     <DashboardView
       load={() => viewsService.driverDashboard()}
-      title="Full driver dataset"
+      title="Driver dashboard"
       errorTitle="Could not load driver view"
       errorMessage="Request failed - check token and driver role."
+      statusMixOnly
     />
   );
 }

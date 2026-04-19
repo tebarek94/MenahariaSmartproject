@@ -134,6 +134,8 @@ export function RefreshCwIcon({ className }) {
   );
 }
 
+export const RefreshIcon = RefreshCwIcon;
+
 export function ChartTrendIcon({ className }) {
   return (
     <svg

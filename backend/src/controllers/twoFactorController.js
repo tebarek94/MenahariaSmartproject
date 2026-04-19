@@ -63,13 +63,14 @@ export async function twoFactorRequestEnable(req, res) {
       console.error("sendTwoFactorOtpEmail enable:", mailErr);
       await clearEmailOtp(userId, TWO_FA_OTP_PURPOSE.ENABLE);
       if (mailErr?.code === "EAUTH") {
-        return res.status(502).json({
+        return res.status(503).json({
           message:
-            "Could not send email (SMTP login failed). Check server mail settings.",
+            "Could not send email (SMTP login failed). Check server mail settings, or in development rely on console OTP unless SMTP_FORCE_SEND=1.",
         });
       }
-      return res.status(502).json({
-        message: "Could not send the verification email. Try again later.",
+      return res.status(503).json({
+        message:
+          "Could not send the verification email. Try again later. In development, OTPs are usually logged to the server console.",
       });
     }
 
@@ -163,13 +164,14 @@ export async function twoFactorRequestDisable(req, res) {
       console.error("sendTwoFactorOtpEmail disable:", mailErr);
       await clearEmailOtp(userId, TWO_FA_OTP_PURPOSE.DISABLE);
       if (mailErr?.code === "EAUTH") {
-        return res.status(502).json({
+        return res.status(503).json({
           message:
-            "Could not send email (SMTP login failed). Check server mail settings.",
+            "Could not send email (SMTP login failed). Check server mail settings, or in development rely on console OTP unless SMTP_FORCE_SEND=1.",
         });
       }
-      return res.status(502).json({
-        message: "Could not send the verification email. Try again later.",
+      return res.status(503).json({
+        message:
+          "Could not send the verification email. Try again later. In development, OTPs are usually logged to the server console.",
       });
     }
 

@@ -255,13 +255,13 @@ export const registerPassengerStart = async (req, res) => {
       ]);
       if (mailErr?.code === "EAUTH") {
         const isGmail = /gmail\.com/i.test(String(process.env.SMTP_HOST || ""));
-        return res.status(502).json({
+        return res.status(503).json({
           message: isGmail
             ? "Gmail rejected the SMTP password. Use an App Password (not your normal Gmail password): enable 2-Step Verification, then create one at https://myaccount.google.com/apppasswords and set SMTP_PASS to that 16-character value. SMTP_USER must be your full Gmail address."
             : "SMTP username or password was rejected. Check SMTP_USER and SMTP_PASS for your provider.",
         });
       }
-      return res.status(502).json({
+      return res.status(503).json({
         message:
           "Could not send the verification email. Check SMTP settings or try again later.",
       });
@@ -439,13 +439,14 @@ export const login = async (req, res) => {
           });
         }
         if (sendErr?.code === "EAUTH") {
-          return res.status(502).json({
+          return res.status(503).json({
             message:
-              "Could not send sign-in code (SMTP failed). Check server mail settings.",
+              "Could not send sign-in code (SMTP failed). Check server mail settings, or in development rely on console OTP unless SMTP_FORCE_SEND=1.",
           });
         }
-        return res.status(502).json({
-          message: "Could not send sign-in code to your email. Try again later.",
+        return res.status(503).json({
+          message:
+            "Could not send sign-in code to your email. Try again later. In development, OTPs are usually logged to the server console.",
         });
       }
 

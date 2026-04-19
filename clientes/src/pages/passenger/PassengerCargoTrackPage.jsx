@@ -193,37 +193,6 @@ export function PassengerCargoTrackPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <h2 className="text-p-heading text-lg font-bold sm:text-xl lg:text-2xl">
-            Track cargo
-          </h2>
-          <p className="text-p-muted">
-            Search by shipment ID, tracking code, or route. Status updates every{" "}
-            {POLL_MS / 1000}s while this page is open.
-          </p>
-          {lastSync ? (
-            <p className="text-xs text-slate-500">
-              Last updated {lastSync.toLocaleString()}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link to={ROUTES.PASSENGER_DASHBOARD}>
-            <Button variant="ghost" className="!text-xs" type="button">
-              ← Dashboard
-            </Button>
-          </Link>
-          <Button
-            variant="ghost"
-            className="!text-xs"
-            type="button"
-            onClick={() => load({ quiet: true })}
-          >
-            Refresh
-          </Button>
-        </div>
-      </div>
 
       {error ? (
         <Card>

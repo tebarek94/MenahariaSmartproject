@@ -14,11 +14,23 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    // REST only; Socket.IO uses `API_BASE` (dev default http://localhost:5000) to avoid ws proxy errors.
+    // Dev: same-origin `/api` + `/socket.io` so Bearer tokens and websockets match the app origin (avoids CORS issues).
     proxy: {
       "/api": {
         target: "http://localhost:5000",
         changeOrigin: true,
+      },
+      "/socket.io": {
+        target: "http://localhost:5000",
+        changeOrigin: true,
+        ws: true,
+        /** HMR / tab close often aborts the websocket; avoid noisy ECONNABORTED logs */
+        configure: (proxy) => {
+          proxy.on("error", (err) => {
+            if (err?.code === "ECONNABORTED" || err?.code === "ECONNRESET") return;
+            console.error("[vite proxy]", err);
+          });
+        },
       },
     },
   },

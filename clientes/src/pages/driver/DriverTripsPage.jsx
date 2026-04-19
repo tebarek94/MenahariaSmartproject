@@ -65,13 +65,9 @@ export function DriverTripsPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1">
           <h2 className="text-lg font-bold text-white sm:text-xl lg:text-2xl">
-            My trips
+            This page shows all your trips.
           </h2>
-          <p className="text-sm text-primary-400/80">
-            Trips assigned to you (schedule, route, vehicle). Data comes from{" "}
-            <code className="text-xs text-primary-300">GET /api/trips</code> as a
-            driver.
-          </p>
+         
         </div>
         <Button variant="ghost" className="shrink-0 self-start" onClick={() => load()}>
           Refresh

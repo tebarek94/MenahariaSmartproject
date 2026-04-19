@@ -5,6 +5,7 @@ import { Button } from "@/ui/Button.jsx";
 import { Spinner } from "@/ui/Spinner.jsx";
 import { formatDate, formatMoney } from "@/utils/format.js";
 import { isCargoFeePaid } from "@/utils/cargoPayment.js";
+import { RefreshIcon } from "@/ui/icons.jsx";
 
 function normalizeList(data) {
   if (Array.isArray(data)) return data;
@@ -58,18 +59,10 @@ export function DriverCargoPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-1">
-          <h2 className="text-lg font-bold text-slate-900 dark:text-white sm:text-xl lg:text-2xl">
-            Cargo on my trips
-          </h2>
-          <p className="text-sm text-slate-600 dark:text-primary-400/80">
-            Shipments booked on trips where you are the assigned driver (
-            <code className="text-xs text-slate-500 dark:text-primary-300">GET /api/cargo</code>
-            ). Read-only — status changes are done by admin or the cargo owner.
-          </p>
-        </div>
+       
         <Button variant="ghost" className="self-start" onClick={() => refresh()}>
-          Refresh now
+    
+          <RefreshIcon className="w-4 h-4" />
         </Button>
       </div>
 

@@ -47,7 +47,6 @@ import {
   AdminNotificationsPage,
   AdminSupportChatPage,
   AdminReportsPage,
-  AdminRelationsOverviewPage,
   AdminProfilePage,
   AdminLiveGpsPage,
 } from "@/pages/index.js";
@@ -192,6 +191,10 @@ export default function App() {
               element={<AdminLoginHistoryPage />}
             />
             <Route
+              path={ROUTES.ADMIN_AUDIT_LOG}
+              element={<AdminLoginHistoryPage />}
+            />
+            <Route
               path="/admin/notifications"
               element={<AdminNotificationsPage />}
             />
@@ -200,10 +203,6 @@ export default function App() {
               element={<AdminSupportChatPage />}
             />
             <Route path="/admin/reports" element={<AdminReportsPage />} />
-            <Route
-              path="/admin/relations"
-              element={<AdminRelationsOverviewPage />}
-            />
             <Route path="/admin/profile" element={<AdminProfilePage />} />
           </Route>
         </Route>
