@@ -42,6 +42,7 @@ DROP TABLE IF EXISTS trips;
 DROP TABLE IF EXISTS seats;
 DROP TABLE IF EXISTS role_permissions;
 DROP TABLE IF EXISTS support_chat_messages;
+DROP TABLE IF EXISTS passenger_driver_assignments;
 DROP TABLE IF EXISTS user_two_factor_email_otp;
 DROP TABLE IF EXISTS passenger_registration_pending;
 DROP TABLE IF EXISTS users;
@@ -126,6 +127,23 @@ CREATE TABLE passenger_registration_pending (
   CONSTRAINT fk_passenger_pending_role FOREIGN KEY (role_id) REFERENCES roles (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE passenger_driver_assignments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  passenger_user_id INT NOT NULL,
+  driver_user_id INT NOT NULL,
+  assigned_by_user_id INT NULL,
+  expires_at DATETIME NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_passenger_driver_passenger (passenger_user_id),
+  KEY idx_passenger_driver_driver (driver_user_id),
+  KEY idx_passenger_driver_expires_at (expires_at),
+  KEY idx_passenger_driver_assigned_by (assigned_by_user_id),
+  CONSTRAINT fk_passenger_driver_passenger FOREIGN KEY (passenger_user_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_passenger_driver_driver FOREIGN KEY (driver_user_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_passenger_driver_assigned_by FOREIGN KEY (assigned_by_user_id) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ---------------------------------------------------------------------------
 -- Routes & fleet
 -- ---------------------------------------------------------------------------
@@ -155,6 +173,7 @@ CREATE TABLE trips (
   route_id INT NOT NULL,
   vehicle_id INT NOT NULL,
   driver_id INT NULL,
+  driver_lock_expires_at DATETIME NULL COMMENT 'UTC: reassign/clear driver blocked until this time (see DRIVER_TRIP_LOCK_HOURS)',
   departure_time DATETIME NOT NULL,
   arrival_time DATETIME NULL,
   price DECIMAL(12, 2) NOT NULL DEFAULT 0,
@@ -162,6 +181,7 @@ CREATE TABLE trips (
   KEY idx_trips_route (route_id),
   KEY idx_trips_vehicle (vehicle_id),
   KEY idx_trips_driver (driver_id),
+  KEY idx_trips_driver_lock (driver_lock_expires_at),
   KEY idx_trips_departure (departure_time),
   CONSTRAINT fk_trips_route FOREIGN KEY (route_id) REFERENCES routes (id) ON DELETE RESTRICT,
   CONSTRAINT fk_trips_vehicle FOREIGN KEY (vehicle_id) REFERENCES vehicles (id) ON DELETE RESTRICT,
@@ -211,7 +231,14 @@ CREATE TABLE tickets (
   download_expires_at TIMESTAMP NULL,
   download_ip VARCHAR(45) NULL,
   download_user_agent TEXT NULL,
+  trip_seat_open VARCHAR(100) GENERATED ALWAYS AS (
+    CASE
+      WHEN LOWER(TRIM(COALESCE(`status`, ''))) = 'cancelled' THEN NULL
+      ELSE CONCAT(CAST(`trip_id` AS CHAR), '-', CAST(`seat_id` AS CHAR))
+    END
+  ) STORED,
   UNIQUE KEY uk_tickets_code (ticket_code),
+  UNIQUE KEY uk_tickets_open_trip_seat (trip_seat_open),
   KEY idx_tickets_user (user_id),
   KEY idx_tickets_trip (trip_id),
   KEY idx_tickets_seat (seat_id),
@@ -621,15 +648,41 @@ LEFT JOIN routes r ON r.id = tr.route_id;
 INSERT INTO roles (id, name) VALUES
   (1, 'admin'),
   (2, 'driver'),
-  (3, 'passenger')
+  (3, 'passenger'),
+  (4, 'staff')
 ON DUPLICATE KEY UPDATE name = VALUES(name);
 
-ALTER TABLE roles AUTO_INCREMENT = 4;
+ALTER TABLE roles AUTO_INCREMENT = 5;
 
--- Optional: sample permissions (uncomment to load)
--- INSERT INTO permissions (name) VALUES
---   ('users.read'), ('users.write'),
---   ('trips.read'), ('trips.write');
+-- Seed: permissions used by staff dashboard and operations
+INSERT INTO permissions (name) VALUES
+  ('tickets.create'),
+  ('tickets.read'),
+  ('tickets.update'),
+  ('tickets.validate'),
+  ('boarding.manage'),
+  ('cargo.create'),
+  ('cargo.read'),
+  ('cargo.update'),
+  ('cargo.receipt.generate')
+ON DUPLICATE KEY UPDATE name = VALUES(name);
+
+-- Seed: role_permissions for staff role
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT 4 AS role_id, p.id
+FROM permissions p
+WHERE p.name IN (
+  'tickets.create',
+  'tickets.read',
+  'tickets.update',
+  'tickets.validate',
+  'boarding.manage',
+  'cargo.create',
+  'cargo.read',
+  'cargo.update',
+  'cargo.receipt.generate'
+)
+ON DUPLICATE KEY UPDATE permission_id = VALUES(permission_id);
 
 -- =============================================================================
 -- End of schema

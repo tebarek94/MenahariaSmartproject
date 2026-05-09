@@ -1,9 +1,0 @@
-export { PassengerLandingPage } from "./PassengerLandingPage.jsx";
-export { PassengerRegisterPage } from "./PassengerRegisterPage.jsx";
-export { PassengerDashboardPage } from "./PassengerDashboardPage.jsx";
-export { PassengerBookPage } from "./PassengerBookPage.jsx";
-export { PassengerProfilePage } from "./PassengerProfilePage.jsx";
-export { PassengerCargoTrackPage } from "./PassengerCargoTrackPage.jsx";
-export { PassengerRefundRequestsPage } from "./PassengerRefundRequestsPage.jsx";
-export { PassengerSupportChatPage } from "./PassengerSupportChatPage.jsx";
-export { UserTicketsPage } from "./UserTicketsPage.jsx";

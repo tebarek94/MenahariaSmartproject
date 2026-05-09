@@ -4,12 +4,13 @@ import * as tripModel from "../models/tripModel.js";
 import * as notificationModel from "../models/notificationModel.js";
 import { getUserWithRoleById } from "../models/userModel.js";
 import { sendSuccess, sendError } from "../utils/apiResponse.js";
+import PDFDocument from "pdfkit";
 import {
   attachTicketQr,
   generateOneTimeTicketQr,
   normalizeValidateQrTokenInput,
 } from "../utils/ticketQr.js";
-import { isAdmin, isDriver, isPassenger } from "../constants/roles.js";
+import { isAdmin, isDriver, isPassenger, isStaff } from "../constants/roles.js";
 import { logAutoReportTask } from "../utils/reportActivity.js";
 import { emitToUser } from "../realtime/socketServer.js";
 
@@ -85,7 +86,7 @@ async function notifyDriverPassengerBooked(driverId, ticketRow, fallback, ticket
 }
 
 function canReadTicket(req, row) {
-  if (isAdmin(req.roleName)) return true;
+  if (isAdmin(req.roleName) || isStaff(req.roleName)) return true;
   if (isPassenger(req.roleName) && Number(row.user_id) === Number(req.user.id))
     return true;
   if (
@@ -95,6 +96,219 @@ function canReadTicket(req, row) {
   )
     return true;
   return false;
+}
+
+function formatDateTime(value) {
+  if (!value) return "Not Scheduled";
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return "Not Scheduled";
+  }
+}
+
+function drawLabelValue(doc, label, value) {
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(10)
+    .fillColor("#334155")
+    .text(`${label}: `, { continued: true });
+  doc
+    .font("Helvetica")
+    .fillColor("#0f172a")
+    .text(String(value ?? "N/A"));
+}
+
+async function generateTicketPdf(ticketData, token, qrDataUrl) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const doc = new PDFDocument({ size: "A4", margin: 42 });
+
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const pageLeft = 42;
+    const pageTop = 42;
+    const contentWidth = doc.page.width - pageLeft * 2;
+    const routeText = `${ticketData.origin || "Unknown"} -> ${ticketData.destination || "Unknown"}`;
+    const issuedAt = formatDateTime(ticketData.issued_at);
+    const departureAt = formatDateTime(ticketData.departure_time);
+    const arrivalAt = formatDateTime(ticketData.arrival_time);
+    const seatText =
+      ticketData.seat_number || ticketData.seat_id || "Assigned at Check-in";
+    const statusText = String(ticketData.status || "reserved").toUpperCase();
+    const payStatusText = String(ticketData.payment_status || "pending").toUpperCase();
+
+    // Header banner
+    doc.save();
+    doc.roundedRect(pageLeft, pageTop, contentWidth, 92, 12).fill("#0f766e");
+    doc.restore();
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(20)
+      .fillColor("#ffffff")
+      .text("MENAHARIYA SMART", pageLeft + 18, pageTop + 18);
+    doc
+      .font("Helvetica")
+      .fontSize(10.5)
+      .fillColor("#ccfbf1")
+      .text("Official Passenger Ticket", pageLeft + 18, pageTop + 46);
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(12)
+      .fillColor("#ffffff")
+      .text(`TICKET #${ticketData.id}`, pageLeft + 18, pageTop + 62);
+
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(11)
+      .fillColor("#ffffff")
+      .text("Route", pageLeft + contentWidth - 220, pageTop + 20);
+    doc
+      .font("Helvetica")
+      .fontSize(11)
+      .fillColor("#e6fffa")
+      .text(routeText, pageLeft + contentWidth - 220, pageTop + 40, {
+        width: 200,
+        align: "right",
+      });
+
+    doc.y = pageTop + 108;
+
+    // Status chips
+    const chipY = doc.y;
+    const chipHeight = 24;
+    doc.roundedRect(pageLeft, chipY, 150, chipHeight, 12).fill("#e2e8f0");
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(9)
+      .fillColor("#0f172a")
+      .text(`STATUS: ${statusText}`, pageLeft + 12, chipY + 8);
+    doc.roundedRect(pageLeft + 162, chipY, 190, chipHeight, 12).fill("#dcfce7");
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(9)
+      .fillColor("#166534")
+      .text(`PAYMENT: ${payStatusText}`, pageLeft + 174, chipY + 8);
+    doc.y = chipY + chipHeight + 14;
+
+    const sectionX = pageLeft;
+    const sectionW = contentWidth;
+    const titleColor = "#0f172a";
+    const valueColor = "#1e293b";
+
+    const drawSectionBox = (title, y, height) => {
+      doc.roundedRect(sectionX, y, sectionW, height, 10).fill("#f8fafc");
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(11)
+        .fillColor(titleColor)
+        .text(title, sectionX + 14, y + 12);
+      return y + 32;
+    };
+
+    const pair = (x, y, label, value) => {
+      doc.font("Helvetica-Bold").fontSize(9).fillColor("#475569").text(label, x, y);
+      doc
+        .font("Helvetica")
+        .fontSize(10.5)
+        .fillColor(valueColor)
+        .text(String(value ?? "N/A"), x, y + 13, { width: 230 });
+    };
+
+    // Trip info box
+    let y = doc.y;
+    const tripBoxH = 108;
+    let innerY = drawSectionBox("Trip Information", y, tripBoxH);
+    pair(sectionX + 14, innerY, "Route", routeText);
+    pair(sectionX + 280, innerY, "Seat", seatText);
+    innerY += 38;
+    pair(sectionX + 14, innerY, "Departure", departureAt);
+    pair(sectionX + 280, innerY, "Arrival", arrivalAt);
+
+    // Passenger/driver box
+    y += tripBoxH + 12;
+    const peopleBoxH = 120;
+    innerY = drawSectionBox("Passenger & Driver", y, peopleBoxH);
+    pair(sectionX + 14, innerY, "Passenger", ticketData.passenger_name || "Not Available");
+    pair(
+      sectionX + 280,
+      innerY,
+      "Driver",
+      ticketData.driver_name || "Assigned at Departure"
+    );
+    innerY += 38;
+    pair(
+      sectionX + 14,
+      innerY,
+      "Driver Phone",
+      ticketData.driver_phone || "Not Available"
+    );
+    pair(
+      sectionX + 280,
+      innerY,
+      "Vehicle Plate",
+      ticketData.plate_number || "Assigned at Departure"
+    );
+
+    // Metadata box
+    y += peopleBoxH + 12;
+    const metaBoxH = 94;
+    innerY = drawSectionBox("Ticket Metadata", y, metaBoxH);
+    pair(sectionX + 14, innerY, "Ticket Code", ticketData.ticket_code || "AUTO-GENERATED");
+    pair(sectionX + 280, innerY, "Issued At", issuedAt);
+    innerY += 38;
+    pair(sectionX + 14, innerY, "Generated At", new Date().toLocaleString());
+    pair(sectionX + 280, innerY, "Download ID", token.slice(0, 8).toUpperCase());
+
+    doc.y = y + metaBoxH + 12;
+
+    if (qrDataUrl && String(qrDataUrl).startsWith("data:image")) {
+      try {
+        const base64 = String(qrDataUrl).split(",")[1];
+        const qrBuffer = Buffer.from(base64, "base64");
+        doc.roundedRect(pageLeft, doc.y, contentWidth, 155, 10).fill("#f0fdfa");
+        doc
+          .font("Helvetica-Bold")
+          .fontSize(12)
+          .fillColor("#0f172a")
+          .text("Validation QR Code", pageLeft + 14, doc.y + 12);
+        const qrSize = 105;
+        const x = pageLeft + 18;
+        const qrY = doc.y + 34;
+        doc.image(qrBuffer, x, qrY, { fit: [qrSize, qrSize] });
+        doc
+          .font("Helvetica")
+          .fontSize(10)
+          .fillColor("#334155")
+          .text("Scan this QR at boarding for one-time validation.", x + qrSize + 16, qrY + 16, {
+            width: contentWidth - qrSize - 56,
+          })
+          .text("Keep this ticket PDF until your trip is completed.", x + qrSize + 16, qrY + 46, {
+            width: contentWidth - qrSize - 56,
+          });
+        doc.y += 168;
+      } catch {
+        doc
+          .font("Helvetica")
+          .fontSize(9)
+          .fillColor("#475569")
+          .text("QR image could not be embedded in this PDF.", { align: "center" });
+      }
+    }
+
+    doc
+      .font("Helvetica")
+      .fontSize(8.8)
+      .fillColor("#64748b")
+      .text(
+        "This ticket is valid for one trip only. Please arrive at least 30 minutes before departure and present this file during check-in.",
+        { align: "center" }
+      );
+
+    doc.end();
+  });
 }
 
 export const create = async (req, res) => {
@@ -113,7 +327,7 @@ export const create = async (req, res) => {
     if (user_id == null) {
       return sendError(res, "user_id is required", 400);
     }
-    if (isAdmin(req.roleName)) {
+    if (isAdmin(req.roleName) || isStaff(req.roleName)) {
       const ok = await assertTicketUserIsPassenger(res, user_id);
       if (!ok) return;
     }
@@ -208,6 +422,17 @@ export const create = async (req, res) => {
 
     return sendSuccess(res, { message: "Ticket created", ticket }, 201);
   } catch (err) {
+    const dup =
+      err?.code === "ER_DUP_ENTRY" ||
+      err?.errno === 1062 ||
+      String(err?.sqlMessage || "").includes("uk_tickets_open_trip_seat");
+    if (dup) {
+      return sendError(
+        res,
+        "This seat was just booked or is no longer available. Choose another seat.",
+        409
+      );
+    }
     return sendError(res, "Failed to create ticket", 500, err);
   }
 };
@@ -215,7 +440,7 @@ export const create = async (req, res) => {
 export const getAll = async (req, res) => {
   try {
     let rows;
-    if (isAdmin(req.roleName)) {
+    if (isAdmin(req.roleName) || isStaff(req.roleName)) {
       rows = await ticketModel.getAllTicketsWithDetails();
     } else if (isDriver(req.roleName)) {
       rows = await ticketModel.getTicketsWithDetailsForDriver(req.user.id);
@@ -279,7 +504,7 @@ export const update = async (req, res) => {
       }
       user_id = req.user.id;
     }
-    if (isAdmin(req.roleName)) {
+    if (isAdmin(req.roleName) || isStaff(req.roleName)) {
       const ok = await assertTicketUserIsPassenger(res, user_id);
       if (!ok) return;
     }
@@ -354,7 +579,7 @@ export const remove = async (req, res) => {
       if (Number(existing[0].user_id) !== Number(req.user.id)) {
         return sendError(res, "Forbidden", 403);
       }
-    } else if (!isAdmin(req.roleName)) {
+    } else if (!isAdmin(req.roleName) && !isStaff(req.roleName)) {
       return sendError(res, "Forbidden", 403);
     }
     await ticketModel.deleteTicket(req.params.id);
@@ -574,283 +799,13 @@ export const downloadTicket = async (req, res) => {
     // Get QR code with image
     const ticketWithQr = await attachTicketQr(ticketData, { includeImage: true });
     
-    // Generate enhanced ticket content with QR code
-    const ticketContent = `
-=================================================================
-                    MENAHARIYA SMART TRANSPORT
-                          OFFICIAL TICKET
-=================================================================
+    const pdfBuffer = await generateTicketPdf(ticketData, token, ticketWithQr.qr_data_url);
 
-TICKET DETAILS
--------------
-Ticket ID:        #${ticketData.id.toString().padStart(6, '0')}
-Ticket Code:      ${ticketData.ticket_code || 'AUTO-GENERATED'}
-Status:           ${ticketData.status?.toUpperCase() || 'RESERVED'}
-Payment Status:   ${ticketData.payment_status?.toUpperCase() || 'PENDING'}
-Issued:           ${new Date(ticketData.issued_at).toLocaleString()}
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="ticket_${ticketData.id}.pdf"`);
+    res.setHeader("Content-Length", pdfBuffer.length);
 
-PASSENGER INFORMATION
----------------------
-Name:             ${ticketData.passenger_name || 'Not Available'}
-Ticket Type:      One-Time Valid Ticket
-
-JOURNEY INFORMATION
-------------------
-Route:            ${ticketData.origin || 'Unknown'}  -->  ${ticketData.destination || 'Unknown'}
-Departure:        ${ticketData.departure_time ? new Date(ticketData.departure_time).toLocaleString() : 'Not Scheduled'}
-Arrival:          ${ticketData.arrival_time ? new Date(ticketData.arrival_time).toLocaleString() : 'Not Scheduled'}
-
-VEHICLE & DRIVER DETAILS
-----------------------
-Driver Name:      ${ticketData.driver_name || 'Assigned at Departure'}
-Vehicle Plate:    ${ticketData.plate_number || 'Assigned at Departure'}
-Seat Number:      ${ticketData.seat_id || 'Assigned at Check-in'}
-
-QR CODE FOR SCANNING
---------------------
-${ticketWithQr.qr_data_url ? `[QR CODE IMAGE EMBEDDED - Scan this code for validation]` : '[QR Code will be available at check-in]'}
-
-SECURITY & VALIDATION
---------------------
-QR Code Token:    ${ticketData.qr_code_token || 'Generated at Check-in'}
-Download Token:   ${token}
-Downloaded:       ${new Date().toLocaleString()}
-
-IMPORTANT INFORMATION
---------------------
-* This ticket is valid for one-time use only
-* Please arrive at departure point 30 minutes before departure
-* Keep this ticket safe until journey completion
-* Present this ticket (digital or printed) for boarding
-* QR code will be scanned at departure and arrival points
-
-TERMS & CONDITIONS
-------------------
-1. This ticket is non-refundable after departure time
-2. Seat allocation is final and subject to availability
-3. Menahariya Smart Transport is not responsible for lost tickets
-4. Schedule changes may occur - check departure boards
-5. Valid ID required for ticket verification
-
-CONTACT INFORMATION
-------------------
-Emergency: +251-XXX-XXXX-XXXX
-Email: support@menahariya.com
-Website: www.menahariya.com
-
-=================================================================
-                    Thank you for choosing Menahariya Smart!
-                      Safe Journey - Happy Travel
-=================================================================
-
-Generated on: ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}
-Download ID: ${token.substring(0, 8).toUpperCase()}
-This is an official digital ticket - Page 1 of 1
-    `.trim();
-    
-    // Create HTML content with embedded QR code for better formatting
-    const htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Menahariya Smart Transport - Ticket #${ticketData.id}</title>
-    <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            margin: 0; 
-            padding: 20px; 
-            background: #f5f5f5; 
-        }
-        .ticket { 
-            max-width: 800px; 
-            margin: 0 auto; 
-            background: white; 
-            border: 2px solid #333; 
-            padding: 30px; 
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
-        }
-        .header { 
-            text-align: center; 
-            border-bottom: 3px solid #333; 
-            padding-bottom: 20px; 
-            margin-bottom: 30px; 
-        }
-        .header h1 { 
-            color: #333; 
-            margin: 0; 
-            font-size: 28px; 
-        }
-        .header p { 
-            color: #666; 
-            margin: 5px 0 0 0; 
-            font-size: 14px; 
-        }
-        .section { 
-            margin-bottom: 25px; 
-            padding: 20px; 
-            border: 1px solid #ddd; 
-            border-radius: 8px; 
-            background: #fafafa; 
-        }
-        .section h2 { 
-            color: #333; 
-            margin: 0 0 15px 0; 
-            font-size: 18px; 
-            border-bottom: 2px solid #007bff; 
-            padding-bottom: 5px; 
-        }
-        .info-row { 
-            display: flex; 
-            justify-content: space-between; 
-            margin-bottom: 8px; 
-            padding: 5px 0; 
-        }
-        .info-label { 
-            font-weight: bold; 
-            color: #555; 
-        }
-        .info-value { 
-            color: #333; 
-        }
-        .qr-section { 
-            text-align: center; 
-            margin: 30px 0; 
-        }
-        .qr-image { 
-            max-width: 200px; 
-            height: auto; 
-            border: 2px solid #333; 
-            padding: 10px; 
-            background: white; 
-        }
-        .footer { 
-            text-align: center; 
-            margin-top: 30px; 
-            padding-top: 20px; 
-            border-top: 2px solid #333; 
-            font-size: 12px; 
-            color: #666; 
-        }
-        .status-badge { 
-            display: inline-block; 
-            padding: 4px 8px; 
-            border-radius: 4px; 
-            font-size: 12px; 
-            font-weight: bold; 
-            color: white; 
-        }
-        .status-confirmed { background: #28a745; }
-        .status-reserved { background: #007bff; }
-        .status-pending { background: #ffc107; color: #333; }
-        .status-paid { background: #28a745; }
-    </style>
-</head>
-<body>
-    <div class="ticket">
-        <div class="header">
-            <h1>MENAHARIYA SMART TRANSPORT</h1>
-            <p>OFFICIAL TICKET - #${ticketData.id.toString().padStart(6, '0')}</p>
-        </div>
-        
-        <div class="section">
-            <h2>TICKET DETAILS</h2>
-            <div class="info-row">
-                <span class="info-label">Ticket Code:</span>
-                <span class="info-value">${ticketData.ticket_code || 'AUTO-GENERATED'}</span>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Status:</span>
-                <span class="info-value">
-                    <span class="status-badge status-${ticketData.status || 'reserved'}">
-                        ${(ticketData.status || 'reserved').toUpperCase()}
-                    </span>
-                </span>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Payment Status:</span>
-                <span class="info-value">
-                    <span class="status-badge status-${ticketData.payment_status || 'pending'}">
-                        ${(ticketData.payment_status || 'pending').toUpperCase()}
-                    </span>
-                </span>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Issued:</span>
-                <span class="info-value">${new Date(ticketData.issued_at).toLocaleString()}</span>
-            </div>
-        </div>
-        
-        <div class="section">
-            <h2>PASSENGER INFORMATION</h2>
-            <div class="info-row">
-                <span class="info-label">Name:</span>
-                <span class="info-value">${ticketData.passenger_name || 'Not Available'}</span>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Ticket Type:</span>
-                <span class="info-value">One-Time Valid Ticket</span>
-            </div>
-        </div>
-        
-        <div class="section">
-            <h2>JOURNEY INFORMATION</h2>
-            <div class="info-row">
-                <span class="info-label">Route:</span>
-                <span class="info-value">${ticketData.origin || 'Unknown'}  -->  ${ticketData.destination || 'Unknown'}</span>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Departure:</span>
-                <span class="info-value">${ticketData.departure_time ? new Date(ticketData.departure_time).toLocaleString() : 'Not Scheduled'}</span>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Arrival:</span>
-                <span class="info-value">${ticketData.arrival_time ? new Date(ticketData.arrival_time).toLocaleString() : 'Not Scheduled'}</span>
-            </div>
-        </div>
-        
-        <div class="section">
-            <h2>VEHICLE & DRIVER DETAILS</h2>
-            <div class="info-row">
-                <span class="info-label">Driver Name:</span>
-                <span class="info-value">${ticketData.driver_name || 'Assigned at Departure'}</span>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Vehicle Plate:</span>
-                <span class="info-value">${ticketData.plate_number || 'Assigned at Departure'}</span>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Seat Number:</span>
-                <span class="info-value">${ticketData.seat_id || 'Assigned at Check-in'}</span>
-            </div>
-        </div>
-        
-        ${ticketWithQr.qr_data_url ? `
-        <div class="section">
-            <h2>QR CODE FOR SCANNING</h2>
-            <div class="qr-section">
-                <img src="${ticketWithQr.qr_data_url}" alt="Ticket QR Code" class="qr-image" />
-                <p><small>Scan this QR code for ticket validation</small></p>
-            </div>
-        </div>
-        ` : ''}
-        
-        <div class="footer">
-            <p><strong>Generated on:</strong> ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
-            <p><strong>Download ID:</strong> ${token.substring(0, 8).toUpperCase()}</p>
-            <p><strong>Download Token:</strong> ${token}</p>
-            <p><em>This is an official digital ticket - Page 1 of 1</em></p>
-            <p><em>Thank you for choosing Menahariya Smart! Safe Journey - Happy Travel</em></p>
-        </div>
-    </div>
-</body>
-</html>
-    `;
-    
-    // Set headers for HTML file download
-    res.setHeader('Content-Type', 'text/html');
-    res.setHeader('Content-Disposition', `attachment; filename="ticket_${ticketData.id}.html"`);
-    
-    return res.send(htmlContent);
+    return res.send(pdfBuffer);
   } catch (err) {
     return sendError(res, "Failed to download ticket", 500, err);
   }

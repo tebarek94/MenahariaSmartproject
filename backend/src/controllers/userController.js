@@ -4,13 +4,19 @@ import {
   createUserAsync,
   getAllUsersAsync,
   getPassengerUsersAsync,
+  getUserWithRoleById,
   getUserByIdAsync,
   updateUserAsync,
   deleteUserAsync,
 } from "../models/userModel.js";
 import { sendSuccess, sendError } from "../utils/apiResponse.js";
-import { isAdmin } from "../constants/roles.js";
+import { isAdmin, isDriver, isPassenger } from "../constants/roles.js";
 import { logAutoReportTask } from "../utils/reportActivity.js";
+import {
+  listPassengerDriverAssignments,
+  removePassengerDriverAssignment,
+  upsertPassengerDriverAssignment,
+} from "../models/passengerDriverAssignmentModel.js";
 import {
   ethiopianPhoneVariants,
   normalizeEthiopianPhone,
@@ -25,8 +31,7 @@ function stripUserSecrets(row) {
   return rest;
 }
 
-const ETHIOPIAN_PHONE_ERROR =
-  "Enter a valid Ethiopian phone number (e.g. 0912345678 or +251912345678).";
+const ETHIOPIAN_PHONE_ERROR = "Phone number is required.";
 
 async function findUserByPhoneVariants(phone, excludeId = null) {
   const variants = ethiopianPhoneVariants(phone);
@@ -102,6 +107,128 @@ export const listPassengers = async (req, res) => {
     return sendSuccess(res, rows.map(stripUserSecrets));
   } catch (err) {
     return sendError(res, "Failed to list passengers", 500, err);
+  }
+};
+
+export const listDriverAssignments = async (req, res) => {
+  try {
+    let rows = [];
+    if (isAdmin(req.roleName)) {
+      rows = await listPassengerDriverAssignments(null);
+    } else if (isDriver(req.roleName)) {
+      rows = await listPassengerDriverAssignments(Number(req.user.id));
+    } else {
+      return sendError(res, "Forbidden", 403);
+    }
+    return sendSuccess(res, rows);
+  } catch (err) {
+    if (err?.code === "ER_NO_SUCH_TABLE") {
+      return sendError(
+        res,
+        "Database schema missing/outdated: run backend/database/menahariya_smart_full_schema.sql",
+        503
+      );
+    }
+    if (err?.code === "ER_BAD_FIELD_ERROR") {
+      return sendError(
+        res,
+        "Database schema missing/outdated: run backend/database/menahariya_smart_full_schema.sql",
+        503
+      );
+    }
+    return sendError(res, "Failed to list passenger-driver assignments", 500, err);
+  }
+};
+
+export const assignPassengerToDriver = async (req, res) => {
+  try {
+    if (!isAdmin(req.roleName)) {
+      return sendError(res, "Admin access required", 403);
+    }
+    const passengerId = Number(req.body?.passenger_user_id);
+    const driverId = Number(req.body?.driver_user_id);
+    if (!Number.isInteger(passengerId) || passengerId <= 0) {
+      return sendError(res, "passenger_user_id is required", 400);
+    }
+    if (!Number.isInteger(driverId) || driverId <= 0) {
+      return sendError(res, "driver_user_id is required", 400);
+    }
+    if (passengerId === driverId) {
+      return sendError(res, "Passenger and driver must be different users", 400);
+    }
+
+    const [passengerRows, driverRows] = await Promise.all([
+      getUserWithRoleById(passengerId),
+      getUserWithRoleById(driverId),
+    ]);
+    if (!passengerRows.length) {
+      return sendError(res, "Passenger user not found", 404);
+    }
+    if (!driverRows.length) {
+      return sendError(res, "Driver user not found", 404);
+    }
+    if (!isPassenger(passengerRows[0].role_name)) {
+      return sendError(res, "Selected passenger_user_id is not a passenger account", 400);
+    }
+    if (!isDriver(driverRows[0].role_name)) {
+      return sendError(res, "Selected driver_user_id is not a driver account", 400);
+    }
+
+    await upsertPassengerDriverAssignment(
+      passengerId,
+      driverId,
+      Number(req.user.id)
+    );
+    return sendSuccess(res, { message: "Passenger assigned to driver" });
+  } catch (err) {
+    if (err?.code === "ER_NO_SUCH_TABLE") {
+      return sendError(
+        res,
+        "Database schema missing/outdated: run backend/database/menahariya_smart_full_schema.sql",
+        503
+      );
+    }
+    if (err?.code === "ER_BAD_FIELD_ERROR") {
+      return sendError(
+        res,
+        "Database schema missing/outdated: run backend/database/menahariya_smart_full_schema.sql",
+        503
+      );
+    }
+    return sendError(res, "Failed to assign passenger to driver", 500, err);
+  }
+};
+
+export const unassignPassengerFromDriver = async (req, res) => {
+  try {
+    if (!isAdmin(req.roleName)) {
+      return sendError(res, "Admin access required", 403);
+    }
+    const passengerId = Number(req.params.passengerId);
+    if (!Number.isInteger(passengerId) || passengerId <= 0) {
+      return sendError(res, "Invalid passenger id", 400);
+    }
+    const result = await removePassengerDriverAssignment(passengerId);
+    if ((result?.affectedRows ?? 0) === 0) {
+      return sendError(res, "Assignment not found", 404);
+    }
+    return sendSuccess(res, { message: "Passenger unassigned from driver" });
+  } catch (err) {
+    if (err?.code === "ER_NO_SUCH_TABLE") {
+      return sendError(
+        res,
+        "Database schema missing/outdated: run backend/database/menahariya_smart_full_schema.sql",
+        503
+      );
+    }
+    if (err?.code === "ER_BAD_FIELD_ERROR") {
+      return sendError(
+        res,
+        "Database schema missing/outdated: run backend/database/menahariya_smart_full_schema.sql",
+        503
+      );
+    }
+    return sendError(res, "Failed to unassign passenger from driver", 500, err);
   }
 };
 

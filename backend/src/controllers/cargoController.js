@@ -2,11 +2,11 @@ import * as cargoModel from "../models/cargoModel.js";
 import * as tripModel from "../models/tripModel.js";
 import { sendSuccess, sendError } from "../utils/apiResponse.js";
 import { resolveCargoFee } from "../utils/cargoFee.js";
-import { isAdmin, isDriver, isPassenger } from "../constants/roles.js";
+import { isAdmin, isDriver, isPassenger, isStaff } from "../constants/roles.js";
 import { logAutoReportTask } from "../utils/reportActivity.js";
 
 function canAccessCargoRow(req, row) {
-  if (isAdmin(req.roleName)) return true;
+  if (isAdmin(req.roleName) || isStaff(req.roleName)) return true;
   if (isPassenger(req.roleName) && Number(row.owner_id) === Number(req.user.id))
     return true;
   if (
@@ -29,7 +29,7 @@ export const create = async (req, res) => {
       return sendError(res, "trip_id and weight are required", 400);
     }
     const feeResult = resolveCargoFee(weight, req.body, {
-      isAdmin: isAdmin(req.roleName),
+      isAdmin: isAdmin(req.roleName) || isStaff(req.roleName),
     });
     if (feeResult.error) {
       return sendError(res, feeResult.error, 400);
@@ -73,7 +73,7 @@ export const create = async (req, res) => {
 
 export const getAll = async (req, res) => {
   try {
-    if (isAdmin(req.roleName)) {
+    if (isAdmin(req.roleName) || isStaff(req.roleName)) {
       const rows = await cargoModel.getAllCargo();
       return sendSuccess(res, rows);
     }
@@ -129,7 +129,7 @@ export const update = async (req, res) => {
       );
     }
     const feeResult = resolveCargoFee(weight, req.body, {
-      isAdmin: isAdmin(req.roleName),
+      isAdmin: isAdmin(req.roleName) || isStaff(req.roleName),
     });
     if (feeResult.error) {
       return sendError(res, feeResult.error, 400);
@@ -137,7 +137,11 @@ export const update = async (req, res) => {
     if (isPassenger(req.roleName)) {
       owner_id = req.user.id;
     }
-    if (!isAdmin(req.roleName) && Number(owner_id) !== Number(req.user.id)) {
+    if (
+      !isAdmin(req.roleName) &&
+      !isStaff(req.roleName) &&
+      Number(owner_id) !== Number(req.user.id)
+    ) {
       return sendError(res, "Forbidden", 403);
     }
     await cargoModel.updateCargo(
@@ -167,7 +171,7 @@ export const update = async (req, res) => {
  */
 export const bulkAssignTrip = async (req, res) => {
   try {
-    if (!isAdmin(req.roleName)) {
+    if (!isAdmin(req.roleName) && !isStaff(req.roleName)) {
       return sendError(res, "Forbidden", 403);
     }
     const { trip_id, scope, cargo_ids: rawIds, confirm } = req.body ?? {};
@@ -178,6 +182,23 @@ export const bulkAssignTrip = async (req, res) => {
     const trips = await tripModel.getTripById(tid);
     if (!trips.length) {
       return sendError(res, "Trip not found", 404);
+    }
+    const trip = trips[0];
+    const driverId = Number(trip.driver_id);
+    if (!Number.isInteger(driverId) || driverId <= 0) {
+      return sendError(
+        res,
+        "Selected trip has no assigned driver. Assign a driver first, then reassign cargo.",
+        400
+      );
+    }
+    const departureTs = new Date(trip.departure_time || "").getTime();
+    if (Number.isFinite(departureTs) && departureTs <= Date.now()) {
+      return sendError(
+        res,
+        "Selected trip has already departed/expired. Choose an active upcoming trip.",
+        400
+      );
     }
 
     let result;
@@ -228,7 +249,7 @@ export const remove = async (req, res) => {
       if (Number(existing[0].owner_id) !== Number(req.user.id)) {
         return sendError(res, "Forbidden", 403);
       }
-    } else if (!isAdmin(req.roleName)) {
+    } else if (!isAdmin(req.roleName) && !isStaff(req.roleName)) {
       return sendError(res, "Forbidden", 403);
     }
     await cargoModel.deleteCargo(req.params.id);

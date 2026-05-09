@@ -13,7 +13,7 @@ import {
 function missingOtpTableMessage(err) {
   const code = err?.code;
   if (code === "ER_NO_SUCH_TABLE" || code === "ER_BAD_FIELD_ERROR") {
-    return "Database migration missing: run backend/database/008_user_two_factor_email_otp.sql";
+    return "Database schema missing/outdated: run backend/database/menahariya_smart_full_schema.sql";
   }
   return null;
 }

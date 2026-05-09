@@ -1,12 +1,8 @@
 /**
- * Ethiopian mobile normalization and matching helpers.
+ * Phone normalization and matching helpers.
  *
- * Canonical format in this codebase is E.164: +2517XXXXXXXX or +2519XXXXXXXX.
- * We still accept legacy forms for compatibility:
- * - 07XXXXXXXX / 09XXXXXXXX
- * - 7XXXXXXXX / 9XXXXXXXX
- * - 2517XXXXXXXX / 2519XXXXXXXX
- * - +2517XXXXXXXX / +2519XXXXXXXX
+ * Formatting rules are intentionally relaxed: we keep the value as entered
+ * (except trimming and removing visual separators).
  */
 function cleanPhone(value) {
   return String(value ?? "")
@@ -16,12 +12,7 @@ function cleanPhone(value) {
 
 export function normalizeEthiopianPhone(value) {
   const raw = cleanPhone(value);
-  if (!raw) return null;
-  if (/^\+251[79]\d{8}$/.test(raw)) return raw;
-  if (/^251[79]\d{8}$/.test(raw)) return `+${raw}`;
-  if (/^0[79]\d{8}$/.test(raw)) return `+251${raw.slice(1)}`;
-  if (/^[79]\d{8}$/.test(raw)) return `+251${raw}`;
-  return null;
+  return raw || null;
 }
 
 export function isValidEthiopianPhone(value) {
@@ -31,8 +22,7 @@ export function isValidEthiopianPhone(value) {
 export function ethiopianPhoneVariants(value) {
   const normalized = normalizeEthiopianPhone(value);
   if (!normalized) return [];
-  const nsn = normalized.slice(4); // 9 digits (7/9 + 8 digits)
-  return [...new Set([normalized, normalized.slice(1), `0${nsn}`, nsn])];
+  return [normalized];
 }
 
 /** Backward-compatible name used by SMS and OTP utilities. */

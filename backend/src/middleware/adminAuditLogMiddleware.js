@@ -10,15 +10,11 @@ function clientIp(req) {
   return raw ? String(raw).slice(0, 45) : null;
 }
 
-/**
- * After successful responses, append a row to `login_history` for admin mutations
- * so the admin "Login history" screen shows sign-ins and API actions in one feed.
- * `device_info` uses prefix `AUDIT` (login rows keep the browser User-Agent).
- */
 function shouldRecordAdminAudit(req, res) {
   if (res.statusCode < 200 || res.statusCode >= 300) return false;
   const method = String(req.method || "GET").toUpperCase();
-  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return false;
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS")
+    return false;
 
   const path = (req.originalUrl || req.url || "").split("?")[0];
   if (!path.startsWith("/api")) return false;
@@ -34,7 +30,6 @@ function shouldRecordAdminAudit(req, res) {
   return true;
 }
 
-/** Human label for audit UI: Create / Update / Delete (maps HTTP verb). */
 function auditActivityLabel(method) {
   const m = String(method || "GET").toUpperCase();
   if (m === "POST") return "Create";
@@ -50,12 +45,13 @@ export function adminAuditLoginHistory(req, res, next) {
       const path = (req.originalUrl || req.url || "").split("?")[0];
       const method = String(req.method || "GET").toUpperCase();
       const activity = auditActivityLabel(method);
-      // Example: AUDIT Create POST /api/users — first token is activity, then HTTP verb, then path
       const line = `AUDIT ${activity} ${method} ${path}`;
       const safe = line.length > 500 ? `${line.slice(0, 497)}...` : line;
-      void loginHistoryModel.createLoginHistory(req.user.id, safe, clientIp(req)).catch((err) => {
-        console.error("adminAuditLoginHistory:", err);
-      });
+      void loginHistoryModel
+        .createLoginHistory(req.user.id, safe, clientIp(req))
+        .catch((err) => {
+          console.error("adminAuditLoginHistory:", err);
+        });
     } catch (e) {
       console.error("adminAuditLoginHistory:", e);
     }

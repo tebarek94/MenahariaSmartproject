@@ -107,10 +107,9 @@ export const getAvailableSeats = async (vehicleId, tripId) => {
        AND NOT (
          s.lock_token IS NOT NULL
          AND (s.lock_expires_at IS NULL OR s.lock_expires_at > NOW())
-         AND (s.lock_trip_id IS NULL OR s.lock_trip_id = ?)
        )
      ORDER BY s.seat_number`,
-    [vehicleId, tid, tid]
+    [vehicleId, tid]
   );
 };
 
@@ -191,9 +190,8 @@ export const checkSeatAvailability = async (vehicleId, seatNumber, tripId) => {
     `SELECT id FROM seats
      WHERE id = ? AND vehicle_id = ?
        AND lock_token IS NOT NULL
-       AND (lock_expires_at IS NULL OR lock_expires_at > NOW())
-       AND (lock_trip_id IS NULL OR lock_trip_id = ?)`,
-    [seat[0].id, vehicleId, tripIdNum]
+       AND (lock_expires_at IS NULL OR lock_expires_at > NOW())`,
+    [seat[0].id, vehicleId]
   );
 
   if (activeLockRows.length > 0) {

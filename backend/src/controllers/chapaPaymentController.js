@@ -41,6 +41,23 @@ async function getCargoFeeRow(cargoId) {
   return rows.length ? rows[0] : null;
 }
 
+/** After Chapa success: payment settled and reserved tickets become confirmed (idempotent). */
+async function markTicketSettledFromChapa(ticketId) {
+  const tid = Number(ticketId);
+  if (!Number.isInteger(tid) || tid <= 0) return;
+  await queryAsync(
+    `UPDATE tickets
+     SET
+       payment_status = 'paid',
+       status = CASE
+         WHEN LOWER(TRIM(COALESCE(status, ''))) = 'reserved' THEN 'confirmed'
+         ELSE status
+       END
+     WHERE id = ?`,
+    [tid]
+  );
+}
+
 /** Initialize Chapa for a ticket **or** a cargo shipment (exactly one id in body). */
 export const initializeChapaPayment = async (req, res) => {
   try {
@@ -326,10 +343,7 @@ export const verifyChapaPayment = async (req, res) => {
       });
 
       if (attempt.ticket_id != null) {
-        await queryAsync(
-          "UPDATE tickets SET payment_status = 'paid' WHERE id = ?",
-          [attempt.ticket_id]
-        );
+        await markTicketSettledFromChapa(attempt.ticket_id);
       }
       if (attempt.cargo_id != null) {
         await queryAsync(
@@ -427,10 +441,7 @@ export const handleChapaWebhook = async (req, res) => {
       });
 
       if (attempt.ticket_id != null) {
-        await queryAsync(
-          "UPDATE tickets SET payment_status = 'paid' WHERE id = ?",
-          [attempt.ticket_id]
-        );
+        await markTicketSettledFromChapa(attempt.ticket_id);
       }
       if (attempt.cargo_id != null) {
         await queryAsync(

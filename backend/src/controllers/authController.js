@@ -6,7 +6,11 @@ import { getRoleById } from "../models/roleModel.js";
 import * as loginHistoryModel from "../models/loginHistoryModel.js";
 import { queryAsync } from "../config/db.js";
 import { isPassenger, normalizeRoleName } from "../constants/roles.js";
-import { sendPassengerOtpEmail, sendTwoFactorOtpEmail } from "../utils/emailOtp.js";
+import {
+  sendPassengerOtpEmail,
+  sendTwoFactorLoginNoticeEmail,
+  sendTwoFactorOtpEmail,
+} from "../utils/emailOtp.js";
 import {
   TWO_FA_OTP_PURPOSE,
   accountEmailFor2fa,
@@ -71,7 +75,7 @@ async function authenticateByPhonePassword(phone, password) {
     return {
       ok: false,
       status: 400,
-      body: { message: "Invalid Ethiopian phone format." },
+      body: { message: "Phone number is required." },
     };
   }
   const placeholders = phoneCandidates.map(() => "?").join(", ");
@@ -119,6 +123,21 @@ async function sendLoginSuccess(req, res, user, role_name) {
       null;
     const device = String(req.get("User-Agent") || "").slice(0, 500) || null;
     await loginHistoryModel.createLoginHistory(user.id, device, ip);
+
+    // If 2FA is enabled, send a non-blocking "new login" email notice.
+    if (Number(user?.two_factor_enabled) === 1) {
+      const email = accountEmailFor2fa(user);
+      if (email) {
+        void sendTwoFactorLoginNoticeEmail(email, {
+          fullName: user?.full_name,
+          loginTime: new Date().toISOString(),
+          ipAddress: ip,
+          device,
+        }).catch((mailErr) => {
+          console.error("2FA login notice email:", mailErr);
+        });
+      }
+    }
   } catch (logErr) {
     console.error("login_history:", logErr);
   }
@@ -139,8 +158,7 @@ export const register = async (req, res) => {
     const normalizedPhone = normalizeEthiopianPhone(phone);
     if (!normalizedPhone) {
       return res.status(400).json({
-        message:
-          "Enter a valid Ethiopian phone number (e.g. 0912345678 or +251912345678).",
+        message: "Phone number is required.",
       });
     }
     const emailNorm = normalizeEmail(email);
@@ -190,8 +208,7 @@ export const registerPassengerStart = async (req, res) => {
     }
     if (!isValidEthiopianPhone(phoneNorm)) {
       return res.status(400).json({
-        message:
-          "Enter a valid Ethiopian phone number (e.g. 0912345678 or +251912345678).",
+        message: "Phone number is required.",
       });
     }
     if (!isValidEmailShape(emailNorm)) {
@@ -277,7 +294,7 @@ export const registerPassengerStart = async (req, res) => {
     if (code === "ER_NO_SUCH_TABLE") {
       return res.status(503).json({
         message:
-          "Database migration missing: run backend/database/006_passenger_registration_otp.sql",
+          "Database schema missing/outdated: run backend/database/menahariya_smart_full_schema.sql",
       });
     }
     if (code === "ER_DUP_ENTRY") {
@@ -399,7 +416,7 @@ export const registerPassengerVerify = async (req, res) => {
     if (code === "ER_NO_SUCH_TABLE") {
       return res.status(503).json({
         message:
-          "Database migration missing: run backend/database/006_passenger_registration_otp.sql",
+          "Database schema missing/outdated: run backend/database/menahariya_smart_full_schema.sql",
       });
     }
     res.status(500).json({ message: "Verification failed", error: String(err?.message || err) });
@@ -435,7 +452,7 @@ export const login = async (req, res) => {
         if (sendErr?.code === "ER_NO_SUCH_TABLE") {
           return res.status(503).json({
             message:
-              "Database migration missing: run backend/database/008_user_two_factor_email_otp.sql",
+              "Database schema missing/outdated: run backend/database/menahariya_smart_full_schema.sql",
           });
         }
         if (sendErr?.code === "EAUTH") {
@@ -540,7 +557,7 @@ export const loginTwoFactor = async (req, res) => {
     if (err?.code === "ER_NO_SUCH_TABLE") {
       return res.status(503).json({
         message:
-          "Database migration missing: run backend/database/008_user_two_factor_email_otp.sql",
+          "Database schema missing/outdated: run backend/database/menahariya_smart_full_schema.sql",
       });
     }
     res.status(500).json({ message: "Login failed", error: String(err) });

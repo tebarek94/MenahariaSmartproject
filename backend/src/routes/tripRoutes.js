@@ -12,6 +12,11 @@ router.use(verifyToken, attachRole);
 
 router.post("/", requireAdmin, tripController.create);
 router.get("/", tripController.getAll);
+router.get(
+  "/busy-drivers",
+  requireAdmin,
+  tripController.getBusyDriversForWindow
+);
 router.get("/:id", validateId, tripController.getById);
 router.put("/:id", validateId, requireAdmin, tripController.update);
 router.delete("/:id", validateId, requireAdmin, tripController.remove);

@@ -10,6 +10,7 @@ import {
   twoFactorDisable,
 } from "../controllers/twoFactorController.js";
 import { verifyToken } from "../middleware/authMiddleware.js";
+import { validatePassenger } from "../middleware/validatePassenger.js";
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -40,21 +41,30 @@ router.post("/register", authController.register);
 router.post(
   "/passenger/register/start",
   passengerRegisterStartLimiter,
-  authController.registerPassengerStart
+  validatePassenger,
+  authController.registerPassengerStart,
 );
 router.post(
   "/passenger/register/verify",
   passengerRegisterVerifyLimiter,
-  authController.registerPassengerVerify
+  authController.registerPassengerVerify,
 );
 router.post("/login", loginLimiter, authController.login);
 router.post("/login/2fa", loginLimiter, authController.loginTwoFactor);
 
 // ================= PROFILE =================
 router.get("/profile", verifyToken, authController.getProfile);
-router.post("/profile/two-factor/request-enable", verifyToken, twoFactorRequestEnable);
+router.post(
+  "/profile/two-factor/request-enable",
+  verifyToken,
+  twoFactorRequestEnable,
+);
 router.post("/profile/two-factor/enable", verifyToken, twoFactorEnable);
-router.post("/profile/two-factor/request-disable", verifyToken, twoFactorRequestDisable);
+router.post(
+  "/profile/two-factor/request-disable",
+  verifyToken,
+  twoFactorRequestDisable,
+);
 router.post("/profile/two-factor/disable", verifyToken, twoFactorDisable);
 
 export default router;

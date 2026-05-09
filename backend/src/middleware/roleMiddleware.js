@@ -1,5 +1,10 @@
 import { getRoleById } from "../models/roleModel.js";
-import { isAdmin, isDriver, isPassenger, normalizeRoleName } from "../constants/roles.js";
+import {
+  isAdmin,
+  isDriver,
+  isPassenger,
+  normalizeRoleName,
+} from "../constants/roles.js";
 
 export async function attachRole(req, res, next) {
   try {
@@ -40,12 +45,13 @@ export function requireDriver(req, res, next) {
 
 export function requirePassenger(req, res, next) {
   if (!isPassenger(req.roleName)) {
-    return res.status(403).json({ message: "Passenger / user access required" });
+    return res
+      .status(403)
+      .json({ message: "Passenger / user access required" });
   }
   next();
 }
 
-/** Allow GET for any authenticated role with attachRole; writes need admin. */
 export function requireAdminForMutations(req, res, next) {
   const m = req.method.toUpperCase();
   if (m === "GET" || m === "HEAD" || m === "OPTIONS") return next();

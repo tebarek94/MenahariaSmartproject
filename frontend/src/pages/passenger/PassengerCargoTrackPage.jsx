@@ -1,0 +1,566 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { cargoService } from "@/services/cargo.service.js";
+import { paymentService } from "@/services/payment.service.js";
+import { tripsService } from "@/services/trips.service.js";
+import { Card } from "@/ui/Card.jsx";
+import { Button } from "@/ui/Button.jsx";
+import { Input } from "@/ui/Input.jsx";
+import { Spinner } from "@/ui/Spinner.jsx";
+import { ROUTES, STORAGE_KEYS } from "@/utils/constants.js";
+import {
+  interpretCargoChapaVerify,
+  isCargoFeePaid,
+  parseCargoFeeForChapa,
+} from "@/utils/cargoPayment.js";
+import { formatDate, formatMoney } from "@/utils/format.js";
+import { PassengerCargoGpsMap } from "@/components/maps/PassengerCargoGpsMap.jsx";
+
+function normalizeList(x) {
+  return Array.isArray(x) ? x : Array.isArray(x?.data) ? x.data : [];
+}
+
+const POLL_MS = 30_000;
+
+function statusTone(s) {
+  const v = String(s ?? "").toLowerCase();
+  if (v === "paid" || v === "confirmed" || v === "completed" || v === "delivered")
+    return "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/30";
+  if (v === "pending" || v === "reserved")
+    return "bg-amber-500/20 text-amber-200 ring-1 ring-amber-500/30";
+  if (v === "cancelled" || v === "failed")
+    return "bg-red-500/20 text-red-300 ring-1 ring-red-500/30";
+  if (v === "in_transit" || v === "shipped")
+    return "bg-sky-500/20 text-sky-200 ring-1 ring-sky-500/30";
+  return "bg-slate-500/20 text-slate-300 ring-1 ring-slate-500/20";
+}
+
+function isTripAvailableForPassenger(t) {
+  const status = String(t?.status ?? "").toLowerCase();
+  const allowedStatus =
+    status === "" ||
+    status === "scheduled" ||
+    status === "ongoing" ||
+    status === "open" ||
+    status === "active";
+
+  if (!allowedStatus) return false;
+
+  const ts = new Date(t?.departure_time ?? "").getTime();
+  if (!Number.isFinite(ts)) return true;
+  return ts > Date.now();
+}
+
+function tripOptionLabel(t) {
+  const o = t.origin ?? "—";
+  const d = t.destination ?? "—";
+  const when = formatDate(t.departure_time);
+  const driver = t.driver_name ? ` · Driver: ${t.driver_name}` : "";
+  return `#${t.id} · ${o} → ${d} · ${when}${driver}`;
+}
+
+export function PassengerCargoTrackPage() {
+  const [cargo, setCargo] = useState([]);
+  const [trips, setTrips] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [lastSync, setLastSync] = useState(null);
+  const [copyHint, setCopyHint] = useState("");
+  const [payingId, setPayingId] = useState(null);
+  const [verifyingReturn, setVerifyingReturn] = useState(false);
+  const [verifyNotice, setVerifyNotice] = useState("");
+  const [newTripId, setNewTripId] = useState("");
+  const [newWeight, setNewWeight] = useState("");
+  const [newContent, setNewContent] = useState("");
+  const [cargoFormBusy, setCargoFormBusy] = useState(false);
+  const [cargoFormError, setCargoFormError] = useState("");
+  const [cargoFormNotice, setCargoFormNotice] = useState("");
+  const [showCargoForm, setShowCargoForm] = useState(false);
+
+  const load = useCallback(async (opts = { quiet: false }) => {
+    try {
+      if (!opts.quiet) setLoading(true);
+      const [cargoRaw, tripsRaw] = await Promise.all([
+        cargoService.list(),
+        tripsService.list().catch(() => []),
+      ]);
+      setCargo(normalizeList(cargoRaw));
+      setTrips(normalizeList(tripsRaw));
+      setLastSync(new Date());
+      setError("");
+    } catch (e) {
+      setError(e?.data?.message || e?.message || "Failed to load cargo");
+    } finally {
+      if (!opts.quiet) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    const pending = sessionStorage.getItem(STORAGE_KEYS.CHAPA_PENDING_CARGO_TX_REF);
+    if (!pending) return;
+
+    let cancelled = false;
+    setVerifyingReturn(true);
+    (async () => {
+      try {
+        const data = await paymentService.chapaVerify(pending);
+        if (cancelled) return;
+        const outcome = interpretCargoChapaVerify(data, null);
+        if (outcome.clearPending) {
+          sessionStorage.removeItem(STORAGE_KEYS.CHAPA_PENDING_CARGO_TX_REF);
+        }
+        if (outcome.success) {
+          setError("");
+          await load({ quiet: true });
+          setVerifyNotice("Cargo fee payment confirmed.");
+          setTimeout(() => setVerifyNotice(""), 6000);
+        } else if (outcome.userMessage) {
+          setError(outcome.userMessage);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        const outcome = interpretCargoChapaVerify(null, err);
+        if (outcome.clearPending) {
+          sessionStorage.removeItem(STORAGE_KEYS.CHAPA_PENDING_CARGO_TX_REF);
+        }
+        setError(
+          outcome.userMessage ||
+            err?.data?.message ||
+            err?.message ||
+            "Payment verification failed",
+        );
+      } finally {
+        if (!cancelled) setVerifyingReturn(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
+
+  useEffect(() => {
+    const id = setInterval(() => load({ quiet: true }), POLL_MS);
+    const onVis = () => {
+      if (document.visibilityState === "visible") load({ quiet: true });
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [load]);
+
+  const q = query.trim().toLowerCase();
+
+  const filtered = useMemo(() => {
+    if (!q) return cargo;
+    return cargo.filter((c) => {
+      const idStr = String(c.id ?? "");
+      const track = String(c.tracking_code ?? "").toLowerCase();
+      const origin = String(c.route_origin ?? "").toLowerCase();
+      const dest = String(c.route_destination ?? "").toLowerCase();
+      return (
+        idStr.includes(q) ||
+        track.includes(q) ||
+        origin.includes(q) ||
+        dest.includes(q)
+      );
+    });
+  }, [cargo, q]);
+
+  const availableTrips = useMemo(
+    () =>
+      trips
+        .filter((t) => isTripAvailableForPassenger(t))
+        .sort(
+          (a, b) =>
+            new Date(a.departure_time || 0).getTime() -
+            new Date(b.departure_time || 0).getTime(),
+        ),
+    [trips],
+  );
+
+  async function handleCreateCargo(e) {
+    e.preventDefault();
+    setCargoFormError("");
+    setCargoFormNotice("");
+    const tid = Number(newTripId);
+    const w = Number(newWeight);
+    if (!Number.isFinite(tid) || tid <= 0) {
+      setCargoFormError("Choose a trip.");
+      return;
+    }
+    if (!Number.isFinite(w) || w <= 0) {
+      setCargoFormError("Enter a valid weight in kg.");
+      return;
+    }
+    setCargoFormBusy(true);
+    try {
+      const res = await cargoService.create({
+        trip_id: tid,
+        weight: w,
+        content: newContent.trim() || undefined,
+      });
+      const fee = res?.fee;
+      setCargoFormNotice(
+        fee != null
+          ? `Shipment request #${res?.id ?? ""} created. Estimated fee ${formatMoney(fee)}.`
+          : `Shipment request #${res?.id ?? ""} created.`,
+      );
+      setShowCargoForm(false);
+      setNewTripId("");
+      setNewWeight("");
+      setNewContent("");
+      await load({ quiet: true });
+    } catch (err) {
+      setCargoFormError(
+        err?.data?.message || err?.message || "Could not create shipment",
+      );
+    } finally {
+      setCargoFormBusy(false);
+    }
+  }
+
+  async function handlePayCargoFee(c) {
+    const amt = parseCargoFeeForChapa(c.fee);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setError("Cargo fee is missing; contact support.");
+      return;
+    }
+    if (isCargoFeePaid(c.payment_status)) {
+      setError("This shipment is already paid.");
+      return;
+    }
+    setPayingId(c.id);
+    setError("");
+    try {
+      const returnUrl = `${window.location.origin}${ROUTES.PASSENGER_CARGO_TRACK}`;
+      const data = await paymentService.chapaInitialize({
+        cargo_id: c.id,
+        amount: amt,
+        return_url: returnUrl,
+      });
+      const checkoutUrl = data?.checkout_url;
+      const txRef = data?.tx_ref;
+      if (!checkoutUrl || !txRef) {
+        setError("Invalid payment response from server");
+        return;
+      }
+      sessionStorage.setItem(STORAGE_KEYS.CHAPA_PENDING_CARGO_TX_REF, txRef);
+      window.location.assign(checkoutUrl);
+    } catch (err) {
+      setError(err?.data?.message || err?.message || "Could not start payment");
+    } finally {
+      setPayingId(null);
+    }
+  }
+
+  async function copyCode(code) {
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(String(code));
+      setCopyHint("Copied");
+      setTimeout(() => setCopyHint(""), 2000);
+    } catch {
+      setCopyHint("Copy failed");
+      setTimeout(() => setCopyHint(""), 2000);
+    }
+  }
+
+  if (loading && !cargo.length) {
+    return (
+      <div className="flex justify-center py-20">
+        <Spinner />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* animate the text add animate color change     */}
+      <div className="animate-pulse"> 
+        <h1 className="text-p-heading text-xl font-bold tracking-tight sm:text-2xl"><span className="animate-pulse">Cargo Track Manegements</span></h1>
+      </div>
+
+      {error ? (
+        <Card>
+          <p className="text-sm text-red-400">{error}</p>
+        </Card>
+      ) : null}
+
+      {verifyNotice ? (
+        <Card>
+          <p className="text-sm text-emerald-300">{verifyNotice}</p>
+        </Card>
+      ) : null}
+
+      {cargoFormNotice ? (
+        <Card>
+          <p className="text-sm text-emerald-300">{cargoFormNotice}</p>
+        </Card>
+      ) : null}
+
+      {verifyingReturn ? (
+        <Card>
+          <div className="flex items-center gap-3">
+            <Spinner />
+            <p className="text-p-muted text-sm">Confirming cargo payment…</p>
+          </div>
+        </Card>
+      ) : null}
+
+      <Card className="!p-4 sm:!p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-p-heading text-base font-semibold sm:text-lg">
+              Cargo request
+            </h2>
+            <p className="text-p-muted mt-1 text-sm">
+              Attach shipment to a scheduled trip (fee is calculated from weight)
+            </p>
+          </div>
+          <Button
+            type="button"
+            onClick={() => setShowCargoForm((v) => !v)}
+            disabled={cargoFormBusy}
+          >
+            {showCargoForm ? "Hide form" : "Request cargo"}
+          </Button>
+        </div>
+
+        {showCargoForm ? (
+          <form onSubmit={handleCreateCargo} className="mt-4 space-y-4">
+            <div className="min-w-0">
+              <label className="text-p-muted mb-1.5 block text-sm font-medium">
+                Trip
+              </label>
+              <select
+                className="ui-field w-full max-w-full truncate text-sm sm:text-base"
+                value={newTripId}
+                onChange={(e) => setNewTripId(e.target.value)}
+                required
+              >
+                <option value="">Select trip…</option>
+                {availableTrips.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {tripOptionLabel(t)}
+                  </option>
+                ))}
+              </select>
+              {availableTrips.length === 0 ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  No open trips right now. Try again later or contact support.
+                </p>
+              ) : null}
+            </div>
+            <Input
+              label="Weight (kg)"
+              name="weight"
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={newWeight}
+              onChange={(e) => setNewWeight(e.target.value)}
+              placeholder="e.g. 12.5"
+              required
+            />
+            <div>
+              <label className="text-p-muted mb-1.5 block text-sm font-medium">
+                Description (optional)
+              </label>
+              <textarea
+                name="content"
+                className="ui-field min-h-[88px] w-full resize-y"
+                value={newContent}
+                onChange={(e) => setNewContent(e.target.value)}
+                placeholder="What are you shipping?"
+                rows={3}
+              />
+            </div>
+            {cargoFormError ? (
+              <p className="text-sm text-red-400">{cargoFormError}</p>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="submit"
+                disabled={cargoFormBusy || availableTrips.length === 0}
+              >
+                {cargoFormBusy ? "Submitting…" : "Submit request"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setShowCargoForm(false)}
+                disabled={cargoFormBusy}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <p className="mt-4 text-sm text-slate-400">
+            Click <span className="font-medium text-slate-200">Request cargo</span>{" "}
+            to open the booking form.
+          </p>
+        )}
+      </Card>
+
+      <PassengerCargoGpsMap
+        cargo={cargo}
+        title="Live shipment map"
+        subtitle="Shows drivers for paid, confirmed shipments when they share GPS."
+      />
+
+      <Card className="!p-4">
+        <Input
+          label="Filter shipments"
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Tracking code, ID, city…"
+          autoComplete="off"
+        />
+        {copyHint ? (
+          <p className="mt-2 text-xs text-emerald-400">{copyHint}</p>
+        ) : null}
+      </Card>
+
+      {filtered.length === 0 ? (
+        <Card>
+          <p className="text-p-muted">
+            {cargo.length === 0
+              ? "You have no cargo bookings yet. Use the cargo form above."
+              : "No shipments match your search."}
+          </p>
+          {cargo.length === 0 ? (
+            <Link to={ROUTES.PASSENGER_BOOK} className="mt-3 inline-block">
+              <Button type="button" className="!text-xs">
+                Book a passenger trip
+              </Button>
+            </Link>
+          ) : null}
+        </Card>
+      ) : (
+        <ul className="space-y-4">
+          {filtered.map((c) => (
+            <li key={c.id}>
+              <Card className="!p-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-p-muted font-mono text-sm">
+                        #{c.id}
+                      </span>
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${statusTone(c.status)}`}
+                      >
+                        {c.status ?? "—"}
+                      </span>
+                      {c.trip_status ? (
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${statusTone(c.trip_status)}`}
+                        >
+                          trip: {c.trip_status}
+                        </span>
+                      ) : null}
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${statusTone(isCargoFeePaid(c.payment_status) ? "paid" : c.payment_status)}`}
+                      >
+                        fee: {c.payment_status ?? "pending"}
+                      </span>
+                    </div>
+                    <p className="text-p-heading text-base font-semibold">
+                      {(c.route_origin ?? "—") + " → " + (c.route_destination ?? "—")}
+                    </p>
+                    <dl className="text-p-muted grid gap-1 text-sm sm:grid-cols-2">
+                      <div>
+                        <dt className="text-xs uppercase text-slate-500">
+                          Departure
+                        </dt>
+                        <dd className="text-p-body">
+                          {formatDate(c.trip_departure_time)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs uppercase text-slate-500">
+                          Weight / fee
+                        </dt>
+                        <dd className="text-p-body">
+                          {c.weight != null ? `${c.weight} kg` : "—"} ·{" "}
+                          {formatMoney(c.fee)}
+                        </dd>
+                      </div>
+                      {c.vehicle_plate ? (
+                        <div>
+                          <dt className="text-xs uppercase text-slate-500">
+                            Vehicle
+                          </dt>
+                          <dd className="text-p-body font-mono">
+                            {c.vehicle_plate}
+                          </dd>
+                        </div>
+                      ) : null}
+                    </dl>
+                    {c.content ? (
+                      <p className="text-sm text-slate-500">
+                        <span className="text-slate-600">Note: </span>
+                        {c.content}
+                      </p>
+                    ) : null}
+                    {!isCargoFeePaid(c.payment_status) ? (
+                      <div className="pt-2">
+                        <Button
+                          type="button"
+                          className="!text-xs"
+                          disabled={payingId === c.id}
+                          onClick={() => handlePayCargoFee(c)}
+                        >
+                          {payingId === c.id
+                            ? "Opening Chapa…"
+                            : `Pay ${formatMoney(c.fee)} with Chapa`}
+                        </Button>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Pay the cargo fee securely; you will return here after checkout.
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="shrink-0 rounded-lg border border-white/10 bg-slate-950/60 p-3 sm:min-w-[200px]">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Tracking code
+                    </p>
+                    {c.tracking_code ? (
+                      <>
+                        <p className="mt-1 break-all font-mono text-sm text-emerald-300">
+                          {c.tracking_code}
+                        </p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="mt-2 !px-2 !py-1 !text-xs"
+                          onClick={() => copyCode(c.tracking_code)}
+                        >
+                          Copy code
+                        </Button>
+                      </>
+                    ) : (
+                      <p className="mt-1 text-sm text-slate-500">
+                        Assigned when staff confirms your shipment.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

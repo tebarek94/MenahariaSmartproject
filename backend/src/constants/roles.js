@@ -22,6 +22,16 @@ export function isDriver(roleName) {
   return normalizeRoleName(roleName) === "driver";
 }
 
+export function isStaff(roleName) {
+  const v = normalizeRoleName(roleName);
+  return (
+    v === "staff" ||
+    v === "cargo staff" ||
+    v === "cargo_staff" ||
+    v === "station staff"
+  );
+}
+
 export function isPassenger(roleName) {
   return PASSENGER_ALIASES.has(normalizeRoleName(roleName));
 }

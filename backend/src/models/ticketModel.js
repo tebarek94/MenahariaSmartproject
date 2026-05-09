@@ -107,6 +107,8 @@ const ticketDetailSelect = `
   COALESCE(u.full_name, 'Unknown Passenger') AS passenger_name,
   u.phone AS passenger_phone,
   COALESCE(d.full_name, 'Not Assigned') AS driver_name,
+  d.phone AS driver_phone,
+  d.email AS driver_email,
   COALESCE(v.plate_number, 'Not Assigned') AS plate_number,
   COALESCE(r.origin, 'Unknown') AS origin,
   COALESCE(r.destination, 'Unknown') AS destination,
